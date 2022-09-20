@@ -68,6 +68,7 @@ static const char *peernet_error_str[PEERNET_MAX_ERROR] = {
     "Peer message type not registered",                     // 42
     "Peer callback does not exist",                         // 43
     "Peer string concatenation failed",                     // 44
+    "Peer receiver initialization failed"                   // 45
 };
 
 #ifdef __WINDOWS__
@@ -640,8 +641,8 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                     {
                         zmsg_addstr(callback_msg, CALLBACK_CMD_STR);
                         zmsg_addstr(callback_msg, CALLBACK_MESSAGE_STR);
-                        zmsg_addstr(callback_msg, message_type);   // message_type
-                        zmsg_addstr(callback_msg, name); // peer name
+                        zmsg_addstr(callback_msg, message_type); // message_type
+                        zmsg_addstr(callback_msg, name);         // peer name
                         zmsg_append(callback_msg, &data);
                         if (self->verbose)
                         {
@@ -678,7 +679,7 @@ errored_destroy:
     zactor_destroy(&self->callback_driver);
 errored:
     self->exited = true;
-    zsock_signal(pipe, 0); // let zactor_new return
+    zsock_signal(pipe, 0);            // let zactor_new return
     zsock_signal(pipe, -local_errno); // let caller know of status
     return;
 }
