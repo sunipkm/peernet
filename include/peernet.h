@@ -27,7 +27,7 @@
  * @param message_type Type of the message.
  * @param remote_name Name of the remote peer the event was received from.
  * @param data_local Local data. This pointer is NOT freed.
- * @param data_remote Remote data. This pointer is NOT freed.
+ * @param data_remote Remote data. This pointer is freed, hence data needs to be copied into a state machine to maintain persistence. This pointer is NULL for 
  */
 typedef void (*peernet_callback_t)(peer_t *, const char *, const char *, void * _Nullable, void * _Nullable);
 
@@ -429,6 +429,7 @@ typedef enum
     PEERNET_MESSAGE_TYPE_NOT_REGISTERED = 42,
     PEERNET_CALLBACK_DOES_NOT_EXIST = 43,
     PEERNET_STRCONCAT_FAILED = 44,
+    PEERNET_RECEIVER_FAILED = 45,
     PEERNET_MAX_ERROR
 } PEERNET_ERRORS;
 #ifdef __cplusplus

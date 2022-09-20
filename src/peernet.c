@@ -17,6 +17,11 @@
 #include <string.h>
 #include "utilities/md5sum.h"
 
+#define CALLBACK_CMD_STR "CALLBACK"
+#define CALLBACK_CONNECT_STR "CONNECT"
+#define CALLBACK_DISCONNECT_STR "EXIT"
+#define CALLBACK_MESSAGE_STR "MESSAGE"
+
 static const char *peernet_error_str[PEERNET_MAX_ERROR] = {
     "Success",                                              // 0
     "Peer already exists",                                  // 1
@@ -85,7 +90,6 @@ struct _peer_t
     void *self_on_connect_cb_args;
     peernet_callback_t self_on_exit_cb;
     void *self_on_exit_cb_args;
-    zlist_t *message_types_registerd;
     zhash_t *available_peers;    // zhash of peers, keyed by name
     zhash_t *available_uuids;    // zhash of peers, keyed by uuid
     zhash_t *on_connect_cbs;     // zhash of callback fcns, keyed by name
@@ -94,15 +98,6 @@ struct _peer_t
     zhash_t *on_exit_cb_args;    // zhash of callback fcns, keyed by name
     zhash_t *on_message_cbs;     // callback functions keyed by message type
     zhash_t *on_message_cb_args; // callback function args keyed by message type
-};
-
-struct callback_t
-{
-    peernet_callback_t fcn;
-    char *message_type;
-    char *peer;
-    void *local_data;
-    void *remote_data;
 };
 
 // ------------------ HELPER FUNCTIONS -------------------- //
@@ -257,93 +252,227 @@ static void callback_actor(zsock_t *pipe, void *arg)
     assert(pipe);
     assert(arg);
     peer_t *self = (peer_t *)arg;
+    int local_errno = PEERNET_SUCCESS;
     bool terminated = false;
     int executed = 0;
     zpoller_t *poller = zpoller_new(pipe, NULL);
     if (!poller)
     {
-        peernet_errno = -PEERNET_COULD_NOT_CREATE_ZPOLLER;
+        local_errno = -PEERNET_COULD_NOT_CREATE_ZPOLLER;
         goto errored;
     }
+    assert(!zsock_signal(pipe, PEERNET_SUCCESS)); // zactor_new returns in caller
+    assert(!zsock_signal(pipe, PEERNET_SUCCESS)); // caller verifies init
     while (!terminated)
     {
         void *which = zpoller_wait(poller, -1);
         if (which == pipe) // the only option
         {
             zmsg_t *msg = zmsg_recv(which);
-            char *command = zmsg_popstr(which);
+            char *command = zmsg_popstr(msg);
             if (streq(command, "$TERM"))
-                terminated = true;
-            else if (streq(command, "CALLBACK"))
             {
-                zframe_t *frame = zmsg_pop(msg);
-                if (zframe_size(frame) != sizeof(struct callback_t))
+                terminated = true;
+            }
+            else if (streq(command, CALLBACK_CMD_STR))
+            {
+                peernet_callback_t cb = NULL;
+                void *local_args = NULL;
+                void *remote_args = NULL;
+                char hash[PEERNET_PEER_MESSAGETYPE_MAXLEN + PEERNET_PEER_NAME_MAXLEN + 1] = {
+                    0x0,
+                };
+                int len = 0;
+                // 1. Retrieve contents
+                char *callback_type = zmsg_popstr(msg);
+                char *message_type = zmsg_popstr(msg);
+                char *remote_name = zmsg_popstr(msg);
+                zframe_t *frame = NULL;
+                // 2. Validate contents
+                if (!callback_type)
                 {
-                    zsys_error("Received callback frame size %u, actual size %u.", (unsigned int)zframe_size(frame), (unsigned int)sizeof(struct callback_t));
+                    zsys_error("Callback Actor: Callback type is NULL.");
+                    goto loop_reset;
+                }
+                if (!message_type)
+                {
+                    zsys_error("Callback Actor: Message type is NULL.");
+                    goto loop_reset;
+                }
+                if (!remote_name)
+                {
+                    zsys_error("Callback Actor: Peer name is NULL.");
+                    goto loop_reset;
+                }
+                len = snprintf(hash, sizeof(hash), "%s.%s", message_type, remote_name);
+                if (len != strlen(message_type) + strlen(remote_name))
+                {
+                    zsys_error("Callback Actor: Frame hash length mismatch");
+                    goto loop_reset;
+                }
+                // 3. Retrieve callback functions
+                if (streq(callback_type, CALLBACK_CONNECT_STR)) // for on_connect calls
+                {
+                    if (!zlist_exists(zhash_keys(self->on_connect_cbs), remote_name))
+                    {
+                        if (self->verbose)
+                        {
+                            zsys_error("Callback Actor: Connect callback forf %s not registered.", remote_name);
+                        }
+                        goto loop_reset;
+                    }
+                    if (!zlist_exists(zhash_keys(self->on_connect_cb_args), remote_name))
+                    {
+                        if (self->verbose)
+                        {
+                            zsys_error("Callback Actor: Callback local argument from %s not registered.", remote_name);
+                        }
+                        zhash_delete(self->on_connect_cbs, remote_name);
+                        goto loop_reset;
+                    }
+                    cb = zhash_lookup(self->on_connect_cbs, remote_name);
+                    local_args = zhash_lookup(self->on_connect_cb_args, remote_name);
+                }
+                else if (streq(callback_type, CALLBACK_DISCONNECT_STR)) // for on_disconnect calls
+                {
+                    if (!zlist_exists(zhash_keys(self->on_exit_cbs), remote_name))
+                    {
+                        if (self->verbose)
+                        {
+                            zsys_error("Callback Actor: Disconnect callback for %s not registered.", remote_name);
+                        }
+                        goto loop_reset;
+                    }
+                    if (!zlist_exists(zhash_keys(self->on_exit_cb_args), remote_name))
+                    {
+                        if (self->verbose)
+                        {
+                            zsys_error("Callback Actor: Disconnect callback local argument for %s not registered.", remote_name);
+                        }
+                        zhash_delete(self->on_exit_cbs, remote_name);
+                        goto loop_reset;
+                    }
+                    cb = zhash_lookup(self->on_exit_cbs, remote_name);
+                    local_args = zhash_lookup(self->on_exit_cb_args, remote_name);
+                }
+                else if (streq(callback_type, CALLBACK_MESSAGE_STR)) // for on_message calls
+                {
+                    frame = zmsg_pop(msg);
+                    if (!frame)
+                    {
+                        zsys_error("Callback Actor: Callback for %s from %s does not contain any remote data.", message_type, remote_name);
+                        goto loop_reset;
+                    }
+                    if (!zframe_is(frame))
+                    {
+                        zsys_error("Callback Actor: Callback for %s from %s does not contain a valid remote data frame.", message_type, remote_name);
+                        goto loop_reset;
+                    }
+                    if (!zlist_exists(zhash_keys(self->on_message_cbs), hash))
+                    {
+                        if (self->verbose)
+                        {
+                            zsys_error("Callback Actor: Callback for %s from %s not registered.", message_type, remote_name);
+                        }
+                        goto loop_reset;
+                    }
+                    if (!zlist_exists(zhash_keys(self->on_message_cb_args), hash))
+                    {
+                        if (self->verbose)
+                        {
+                            zsys_error("Callback Actor: Callback local argument for %s from %s not registered.", message_type, remote_name);
+                        }
+                        zhash_delete(self->on_message_cbs, hash);
+                        goto loop_reset;
+                    }
+                    cb = zhash_lookup(self->on_message_cbs, hash);
+                    local_args = zhash_lookup(self->on_message_cb_args, hash);
+                    remote_args = zframe_data(frame);
                 }
                 else
                 {
-                    struct callback_t *cb_data = zframe_data(frame);
-                    if (cb_data && cb_data->fcn)
-                    {
-                        if (self->verbose)
-                            zsys_info("Executing callback function at %p.", cb_data->fcn);
-                        // zsock_send(pipe, "i", executed++);
-                        cb_data->fcn(self, cb_data->message_type, cb_data->peer, cb_data->local_data, cb_data->remote_data);
-                        // zsock_send(pipe, "i", executed);
-                        if (self->verbose)
-                            zsys_info("Executed callback function at %p", cb_data->fcn);
-                    }
+                    if (strlen(callback_type) > 50)
+                        callback_type[51] = '\0'; // limit length
+                    zsys_error("Callback Actor: Unknown callback type %s.", (callback_type));
+                    goto loop_reset;
                 }
-                zframe_destroy(&frame);
+                // 4. Execute the callback function
+                if (self->verbose)
+                {
+                    zsys_info("Executing callback function at %p.", cb);
+                }
+                // zsock_send(pipe, "i", executed++);
+                if (cb)
+                {
+                    cb(self, message_type, remote_name, local_args, remote_args);
+                }
+                else
+                {
+                    zsys_info("Callback function is NULL for %s from %s.", message_type, remote_name);
+                }
+                // zsock_send(pipe, "i", executed);
+                if (self->verbose)
+                {
+                    zsys_info("Executed callback function at %p", cb);
+                }
+                // 5. Free stuff
+            loop_reset:
+                destroy_ptr(&callback_type);
+                destroy_ptr(&message_type);
+                destroy_ptr(&remote_name);
+                if (frame)
+                    zframe_destroy(&frame);
             }
             free(command);
             zmsg_destroy(&msg);
         }
     }
-    zsock_send(pipe, "i", PEERNET_SUCCESS);
+    zpoller_destroy(&poller);
+    zsock_signal(pipe, PEERNET_SUCCESS);
     return;
 errored:
-    zsock_send(pipe, "i", peernet_errno);
+    assert(!zsock_signal(pipe, PEERNET_SUCCESS)); // return zactor_new
+    assert(!zsock_signal(pipe, -local_errno));    // return error message to caller
     return;
 }
 
 static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
 {
     struct _peer_t *self = (peer_t *)_args;
+    int local_errno = PEERNET_SUCCESS;
     zyre_t *node = self->node;
     int rc = 0;
-    self->callback_driver = zactor_new(callback_actor, &(self->verbose));
+    self->callback_driver = zactor_new(callback_actor, self);
     if (!self->callback_driver)
     {
-        peernet_errno = -PEERNET_CALLBACK_DRIVER_FAILED;
+        local_errno = -PEERNET_CALLBACK_DRIVER_FAILED;
         goto errored;
+    }
+    if (!zsock_wait(self->callback_driver))
+    {
+        local_errno = -PEERNET_CALLBACK_DRIVER_FAILED;
+        goto errored_destroy;
     }
     rc = zyre_start(node);
     if (rc)
     {
-        peernet_errno = -PEERNET_PEER_NODE_START_FAILED;
-        goto errored;
+        local_errno = -PEERNET_PEER_NODE_START_FAILED;
+        goto errored_destroy;
     }
     rc = zyre_join(node, self->group_hash);
     if (rc)
     {
-        peernet_errno = -PEERNET_PEER_NODE_GROUP_JOIN_FAILED;
-        goto errored;
-    }
-    rc = zsock_signal(pipe, 0);
-    if (rc)
-    {
-        peernet_errno = -PEERNET_COULD_NOT_SIGNAL_PIPE;
-        goto errored;
+        local_errno = -PEERNET_PEER_NODE_GROUP_JOIN_FAILED;
+        goto errored_destroy;
     }
     zpoller_t *poller = zpoller_new(pipe, zyre_socket(node), NULL);
     if (!poller)
     {
-        peernet_errno = -PEERNET_COULD_NOT_CREATE_ZPOLLER;
-        goto errored;
+        local_errno = -PEERNET_COULD_NOT_CREATE_ZPOLLER;
+        goto errored_destroy;
     }
-
+    assert(!zsock_signal(pipe, PEERNET_SUCCESS)); // clear zactor_new
+    assert(!zsock_signal(pipe, PEERNET_SUCCESS)); // let caller know of status
     bool terminated = false;
     while (!terminated)
     {
@@ -371,7 +500,7 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
             char *internal_msg = zmsg_popstr(msg);
             char *message_type = zmsg_popstr(msg);
 
-            if (streq(event, "WHISPER") && streq(internal_msg, "INTERNAL_MESSAGE")) // check internal messages
+            if (streq(event, "WHISPER") && streq(internal_msg, "INTERNAL_MESSAGE") && streq(group, self->group_hash)) // check internal messages
             {
                 if (streq(message_type, "NAME_CONFLICT_EVICT"))
                 {
@@ -386,7 +515,7 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
 
             else if (streq(event, "ENTER")) // a peer has entered
             {
-                bool in_our_group = (strcmp(group, self->group_hash) == 0); // check if peer is in our group by comparing the group name sent by the peer against our group hash
+                bool in_our_group = streq(group, self->group_hash); // check if peer is in our group by comparing the group name sent by the peer against our group hash
                 if (self->verbose)
                 {
                     zsys_info("%s[%s] has joined [%s]\n", name, uuid, in_our_group == true ? self->group : group);
@@ -404,6 +533,23 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                         if (rc)
                         {
                             zsys_error("Peer name OK: %s, could not send message to %s!", name, uuid);
+                        }
+                        zmsg_t *callback_msg = zmsg_new();
+                        if (!callback_msg)
+                        {
+                            zsys_error("Could not allocate memory to request callback execution.");
+                        }
+                        else
+                        {
+                            zmsg_addstr(callback_msg, CALLBACK_CMD_STR);
+                            zmsg_addstr(callback_msg, CALLBACK_CONNECT_STR);
+                            zmsg_addstr(callback_msg, "");   // message_type
+                            zmsg_addstr(callback_msg, name); // peer name
+                            if (self->verbose)
+                            {
+                                zsys_info("To Callback: %s %s %s %s", CALLBACK_CMD_STR, CALLBACK_CONNECT_STR, "", name);
+                            }
+                            zmsg_send(&callback_msg, self->callback_driver);
                         }
                     }
                     else
@@ -440,6 +586,23 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                         {
                             zsys_info("Peer name %s [%s] leaving.", name, uuid);
                         }
+                        zmsg_t *callback_msg = zmsg_new();
+                        if (!callback_msg)
+                        {
+                            zsys_error("Could not allocate memory to request callback execution.");
+                        }
+                        else
+                        {
+                            zmsg_addstr(callback_msg, CALLBACK_CMD_STR);
+                            zmsg_addstr(callback_msg, CALLBACK_DISCONNECT_STR);
+                            zmsg_addstr(callback_msg, "");   // message_type
+                            zmsg_addstr(callback_msg, name); // peer nam
+                            if (self->verbose)
+                            {
+                                zsys_info("To Callback: %s %s %s %s", CALLBACK_CMD_STR, CALLBACK_DISCONNECT_STR, "", name);
+                            }
+                            zmsg_send(&callback_msg, self->callback_driver);
+                        }
                     }
                     else
                     {
@@ -451,12 +614,42 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                 }
             }
 
-            else if (streq(event, "WHISPER") && streq(internal_msg, "")) // user message
+            else if ((streq(event, "WHISPER") || streq(event, "SHOUT")) && streq(internal_msg, "") && validate_message_type(message_type)) // user message
             {
-            }
-
-            else if (streq(event, "SHOUT") && streq(internal_msg, "")) // user shout
-            {
+                bool in_our_group = (strcmp(group, self->group_hash) == 0); // check if peer is in our group by comparing the group name sent by the peer against our group hash
+                if (self->verbose)
+                {
+                    zsys_info("%s[%s] has whispered [%s]", name, uuid, message_type);
+                }
+                zframe_t *data = zmsg_pop(msg);
+                if (!zframe_is(data))
+                {
+                    if (self->verbose)
+                    {
+                        zsys_error("%s[%s] has no data in [%s]", name, uuid, message_type);
+                    }
+                }
+                else
+                {
+                    zmsg_t *callback_msg = zmsg_new();
+                    if (!callback_msg)
+                    {
+                        zsys_error("Could not allocate memory to request callback execution.");
+                    }
+                    else
+                    {
+                        zmsg_addstr(callback_msg, CALLBACK_CMD_STR);
+                        zmsg_addstr(callback_msg, CALLBACK_MESSAGE_STR);
+                        zmsg_addstr(callback_msg, message_type);   // message_type
+                        zmsg_addstr(callback_msg, name); // peer name
+                        zmsg_append(callback_msg, &data);
+                        if (self->verbose)
+                        {
+                            zsys_info("To Callback: %s %s %s %s", CALLBACK_CMD_STR, CALLBACK_CONNECT_STR, "", name);
+                        }
+                        zmsg_send(&callback_msg, self->callback_driver);
+                    }
+                }
             }
 
             free(event);
@@ -468,11 +661,25 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
             zmsg_destroy(&msg);
         }
     }
-    zactor_destroy(&(self->callback_driver)); // terminate the callback driver
-    zsock_send(pipe, "i", PEERNET_SUCCESS);
+    zpoller_destroy(&poller);
+    zclock_sleep(100);
+    zsock_send(self->callback_driver, "s", "$TERM"); // ask callback driver to terminate
+    byte st = zsock_wait(self->callback_driver);
+    if (st)
+    {
+        zsys_error("Callback driver exit error: %s (%d)", peernet_strerror(-st), st);
+    }
+    zactor_destroy(&(self->callback_driver)); // destroy the callback driver
+    zyre_stop(self->node);
+    zclock_sleep(100);
+    zsock_signal(pipe, PEERNET_SUCCESS);
+    return;
+errored_destroy:
+    zactor_destroy(&self->callback_driver);
 errored:
     self->exited = true;
-    zsock_send(pipe, "i", peernet_errno);
+    zsock_signal(pipe, 0); // let zactor_new return
+    zsock_signal(pipe, -local_errno); // let caller know of status
     return;
 }
 
@@ -570,8 +777,6 @@ peer_t *peer_new(const char *name, const char *group, bool encryption)
     assert(self->on_exit_cbs);
     self->on_exit_cb_args = zhash_new();
     assert(self->on_exit_cb_args);
-    self->message_types_registerd = zlist_new();
-    assert(self->message_types_registerd);
     self->on_message_cbs = zhash_new();
     assert(self->on_message_cbs);
     self->on_message_cb_args = zhash_new();
@@ -596,6 +801,18 @@ void peer_destroy(peer_t **self_p)
     assert(*self_p);
     peer_t *self = *self_p;
     peer_stop(self);
+    zyre_destroy(&(self->node));
+    zhash_destroy(&(self->available_peers));
+    zhash_destroy(&(self->available_uuids));
+    zhash_destroy(&(self->on_connect_cbs));
+    zhash_destroy(&(self->on_connect_cb_args));
+    zhash_destroy(&(self->on_exit_cbs));
+    zhash_destroy(&(self->on_exit_cb_args));
+    zhash_destroy(&(self->on_message_cbs));
+    zhash_destroy(&(self->on_message_cb_args));
+    destroy_ptr(&self->name);
+    destroy_ptr(&self->group);
+    destroy_ptr(&self->group_hash);
     destroy_ptr(self_p);
 }
 
@@ -1235,13 +1452,6 @@ void peer_print(peer_t *self)
         name = zhash_next(self->available_peers);
     }
     printf("\n");
-    printf("Message types: ");
-    char *name = zlist_first(self->message_types_registerd);
-    while (name)
-    {
-        printf("%s, ", name);
-        name = zlist_next(self->message_types_registerd);
-    }
     printf("\n");
     printf("-- END --\n\n");
 }
@@ -1259,10 +1469,45 @@ zyre_t *peer_get_backend(peer_t *self)
 
 int peer_start(peer_t *self)
 {
+    assert(self);
+    assert(self->node);
+    int rc = 0;
+    self->receiver = zactor_new(receiver_actor, self);
+    if (!self->callback_driver)
+    {
+        peernet_errno = -PEERNET_RECEIVER_FAILED;
+        goto errored;
+    }
+    if (!zsock_wait(self->receiver))
+    {
+        peernet_errno = -PEERNET_RECEIVER_FAILED;
+        goto errored_destroy;
+    }
+    zsock_t *receiver_sock = zactor_sock(self->receiver);
+    zsock_set_rcvtimeo(receiver_sock, 100); // wait 100 ms
+    int status = -PEERNET_MAX_ERROR;
+    if (!zsock_recv(receiver_sock, "i", &status))
+    {
+        if (status == -PEERNET_PEER_EXISTS)
+        {
+            zsys_error("Peer name %s already exists, exiting...");
+            rc = -PEERNET_PEER_EXISTS;
+            goto errored_destroy;
+        }
+    }
+    zsock_set_rcvtimeo(receiver_sock, -1); // wait infinite
+errored_destroy:
+    zactor_destroy(&self->receiver);
+errored:
+    return rc;
 }
 
 void peer_stop(peer_t *self)
 {
+    assert(self);
+    assert(self->node);
+    zsock_send(self->receiver, "s", "$TERM");
+    zsock_wait(self->receiver);
 }
 
 int peer_on_message(peer_t *self, const char *message_type, const char *name, peernet_callback_t callback, void *local_args)
@@ -1271,7 +1516,6 @@ int peer_on_message(peer_t *self, const char *message_type, const char *name, pe
 
     assert(self);
     assert(self->node);
-    assert(self->message_types_registerd);
     assert(self->on_message_cb_args);
     assert(self->on_message_cbs);
 
@@ -1340,7 +1584,6 @@ int peer_disable_on_message(peer_t *self, const char *message_type, const char *
 
     assert(self);
     assert(self->node);
-    assert(self->message_types_registerd);
     assert(self->on_message_cb_args);
     assert(self->on_message_cbs);
 
