@@ -15,14 +15,6 @@
 #define ZYRE_BUILD_DRAFT_API 1
 #include <zyre.h>
 
-#define PEER_NAME_MINLEN 4
-#define PEER_NAME_MAXLEN 15
-#define PEER_GROUP_MINLEN 4
-#define PEER_GROUP_MAXLEN 15
-#define PEER_MESSAGETYPE_MINLEN 4
-#define PEER_MESSAGETYPE_MAXLEN 15
-#define PEER_INTERVAL_MS_MAX 3600000
-
 #define PEER_VERSION_MAJOR 0
 #define PEER_VERSION_MINOR 1
 #define PEER_VERSION_PATCH 0
@@ -67,10 +59,6 @@
 // opaque class structure to allow forward references.
 typedef struct _peer_t peer_t;
 #define PEER_T_DEFINED
-
-#define PEER_DISCOVERY_PORT 5772 // free port in IANA DB
-
-#define PEER_DOMAIN_DEFAULT "peer_global"
 
 #ifdef __cplusplus
 extern "C"

@@ -801,6 +801,7 @@ peer_t *peer_new(const char *name, const char *group, bool encryption)
         zyre_set_zcert(self->node, cert);
         zcert_destroy(&cert);
     }
+    zyre_set_port(self->node, PEER_DISCOVERY_PORT);
     self->name = strdup(zyre_name(self->node));
     self->group = _group;
     self->group_hash = strndup(_group_hash, 33);

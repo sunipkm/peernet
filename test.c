@@ -1,6 +1,6 @@
-#include "peernet.h"
+#include "peer.h"
 
 int main()
 {
-    peer_test(false);
+    peer_test(true);
 }
