@@ -17,10 +17,18 @@
 #include <string.h>
 #include "utilities/md5sum.h"
 
+#define eprintlf(fmt, ...)                                                      \
+    {                                                                           \
+        fprintf(stderr, "%s,%d: " fmt "\n", __func__, __LINE__, ##__VA_ARGS__); \
+        fflush(stderr);                                                         \
+    }
+
 #define CALLBACK_CMD_STR "CALLBACK"
 #define CALLBACK_CONNECT_STR "CONNECT"
-#define CALLBACK_DISCONNECT_STR "EXIT"
+#define CALLBACK_DISCONNECT_STR "LEAVE"
 #define CALLBACK_MESSAGE_STR "MESSAGE"
+#define INTERNAL_MESSAGE_STR "INTERNAL_MSG"
+#define EXTERNAL_MESSAGE_STR "EXTERNAL_MSG"
 
 static const char *peernet_error_str[PEERNET_MAX_ERROR] = {
     "Success",                                              // 0
@@ -103,14 +111,48 @@ struct _peer_t
 
 // ------------------ HELPER FUNCTIONS -------------------- //
 
-#define destroy_ptr(ptr) \
-    {                    \
-        if (ptr)         \
-        {                \
-            free(ptr);   \
-            ptr = NULL;  \
-        }                \
+#define destroy_ptr(ptr)                             \
+    {                                                \
+        if (ptr)                                     \
+        {                                            \
+            free(ptr);                               \
+            ptr = NULL;                              \
+        }                                            \
     }
+
+#define destroy_ptr_p(ptr_p)                                         \
+    {                                                                \
+        if (*ptr_p)                                                  \
+        {                                                            \
+            free(*ptr_p);                                            \
+            *ptr_p = NULL;                                           \
+        }                                                            \
+    }
+
+/**
+ * @brief Check if key exists in the hash map.
+ *
+ * @param hash Hash instance (zhash_t)
+ * @param key String key
+ * @return int 0 for false, 1 for true
+ */
+int zhash_exists(zhash_t *hash, const char *key)
+{
+    zlist_t *key_list = zhash_keys(hash);
+    assert(key_list);
+    int rc = 0;
+    char *in_key;
+    for (in_key = zlist_first(key_list); in_key; in_key = zlist_next(key_list))
+    {
+        if (streq(in_key, key))
+        {
+            rc = 1;
+            break;
+        }
+    }
+    zlist_destroy(&key_list);
+    return rc;
+}
 
 const char *peernet_strerror(int error_code)
 {
@@ -162,7 +204,6 @@ static const char *find_name(peer_t *self, const char *name)
     str_to_lower(_name);
 
     const char *uuid = zhash_lookup(self->available_peers, _name);
-
     destroy_ptr(_name);
 
     return uuid;
@@ -307,23 +348,23 @@ static void callback_actor(zsock_t *pipe, void *arg)
                     goto loop_reset;
                 }
                 len = snprintf(hash, sizeof(hash), "%s.%s", message_type, remote_name);
-                if (len != strlen(message_type) + strlen(remote_name))
+                if (len != strlen(message_type) + strlen(remote_name) + 1)
                 {
-                    zsys_error("Callback Actor: Frame hash length mismatch");
+                    zsys_error("Callback Actor: Frame hash length mismatch [%d != %d + %d + 1]", len, strlen(message_type), strlen(remote_name));
                     goto loop_reset;
                 }
                 // 3. Retrieve callback functions
                 if (streq(callback_type, CALLBACK_CONNECT_STR)) // for on_connect calls
                 {
-                    if (!zlist_exists(zhash_keys(self->on_connect_cbs), remote_name))
+                    if (!zhash_exists(self->on_connect_cbs, remote_name))
                     {
                         if (self->verbose)
                         {
-                            zsys_error("Callback Actor: Connect callback forf %s not registered.", remote_name);
+                            zsys_error("Callback Actor: Connect callback for %s not registered.", remote_name);
                         }
                         goto loop_reset;
                     }
-                    if (!zlist_exists(zhash_keys(self->on_connect_cb_args), remote_name))
+                    if (!zhash_exists(self->on_connect_cb_args, remote_name))
                     {
                         if (self->verbose)
                         {
@@ -337,7 +378,7 @@ static void callback_actor(zsock_t *pipe, void *arg)
                 }
                 else if (streq(callback_type, CALLBACK_DISCONNECT_STR)) // for on_disconnect calls
                 {
-                    if (!zlist_exists(zhash_keys(self->on_exit_cbs), remote_name))
+                    if (!zhash_exists(self->on_exit_cbs, remote_name))
                     {
                         if (self->verbose)
                         {
@@ -345,7 +386,7 @@ static void callback_actor(zsock_t *pipe, void *arg)
                         }
                         goto loop_reset;
                     }
-                    if (!zlist_exists(zhash_keys(self->on_exit_cb_args), remote_name))
+                    if (!zhash_exists(self->on_exit_cb_args, remote_name))
                     {
                         if (self->verbose)
                         {
@@ -370,7 +411,7 @@ static void callback_actor(zsock_t *pipe, void *arg)
                         zsys_error("Callback Actor: Callback for %s from %s does not contain a valid remote data frame.", message_type, remote_name);
                         goto loop_reset;
                     }
-                    if (!zlist_exists(zhash_keys(self->on_message_cbs), hash))
+                    if (!zhash_exists(self->on_message_cbs, hash))
                     {
                         if (self->verbose)
                         {
@@ -378,7 +419,7 @@ static void callback_actor(zsock_t *pipe, void *arg)
                         }
                         goto loop_reset;
                     }
-                    if (!zlist_exists(zhash_keys(self->on_message_cb_args), hash))
+                    if (!zhash_exists(self->on_message_cb_args, hash))
                     {
                         if (self->verbose)
                         {
@@ -450,7 +491,8 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
         local_errno = -PEERNET_CALLBACK_DRIVER_FAILED;
         goto errored;
     }
-    if (!zsock_wait(self->callback_driver))
+    rc = zsock_wait(self->callback_driver);
+    if (rc)
     {
         local_errno = -PEERNET_CALLBACK_DRIVER_FAILED;
         goto errored_destroy;
@@ -488,7 +530,11 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
             }
             char *command = zmsg_popstr(msg);
             if (streq(command, "$TERM"))
+            {
+                // leave group
+                zyre_leave(node, self->group_hash);
                 terminated = true;
+            }
             free(command);
             zmsg_destroy(&msg);
         }
@@ -502,7 +548,12 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
             char *internal_msg = zmsg_popstr(msg);
             char *message_type = zmsg_popstr(msg);
 
-            if (streq(event, "WHISPER") && streq(internal_msg, "INTERNAL_MESSAGE") && streq(group, self->group_hash)) // check internal messages
+            if (group == NULL)
+            {
+                group = strdup("");
+            }
+
+            if (streq(event, "WHISPER") && streq(internal_msg, INTERNAL_MESSAGE_STR) && streq(group, self->group_hash)) // check internal messages
             {
                 if (streq(message_type, "NAME_CONFLICT_EVICT"))
                 {
@@ -515,7 +566,7 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                 }
             }
 
-            else if (streq(event, "ENTER")) // a peer has entered
+            else if (streq(event, "JOIN")) // a peer has entered
             {
                 bool in_our_group = streq(group, self->group_hash); // check if peer is in our group by comparing the group name sent by the peer against our group hash
                 if (self->verbose)
@@ -524,14 +575,14 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                 }
                 if (in_our_group) // in our group
                 {
-                    if (!zhash_insert(self->available_peers, name, uuid)) // peer name not already in available peers list
+                    if (!zhash_insert(self->available_peers, name, strdup(uuid))) // peer name not already in available peers list
                     {
-                        zhash_insert(self->available_uuids, uuid, name); // update inverse list as well
+                        zhash_insert(self->available_uuids, uuid, strdup(name)); // update inverse list as well
                         if (self->verbose)
                         {
                             zsys_info("Peer name OK: %s, sending name induction message to %s!", name, uuid);
                         }
-                        rc = peer_whisper_internal(self, uuid, "INTERNAL_MESSAGE", "NAME_OKAY", NULL, 0);
+                        rc = peer_whisper_internal(self, uuid, INTERNAL_MESSAGE_STR, "NAME_OKAY", NULL, 0);
                         if (rc)
                         {
                             zsys_error("Peer name OK: %s, could not send message to %s!", name, uuid);
@@ -560,7 +611,7 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                         {
                             zsys_info("Peer name conflict: %s, sending name conflict message to %s!", name, uuid);
                         }
-                        rc = peer_whisper_internal(self, uuid, "INTERNAL_MESSAGE", "NAME_CONFLICT_EVICT", NULL, 0);
+                        rc = peer_whisper_internal(self, uuid, INTERNAL_MESSAGE_STR, "NAME_CONFLICT_EVICT", NULL, 0);
                         if (rc)
                         {
                             zsys_error("Peer name conflict: %s, could not send message to %s!", name, uuid);
@@ -569,7 +620,7 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                 }
             }
 
-            else if (streq(event, "EXIT"))
+            else if (streq(event, "LEAVE"))
             {
                 bool in_our_group = (strcmp(group, self->group_hash) == 0); // check if peer is in our group by comparing the group name sent by the peer against our group hash
                 if (self->verbose)
@@ -581,8 +632,7 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                     // check if UUID of leaving is in available uuids
                     if (zhash_lookup(self->available_uuids, uuid))
                     {
-                        char *rname = zhash_lookup(self->available_peers, uuid);
-                        zhash_delete(self->available_peers, rname);
+                        zhash_delete(self->available_peers, name);
                         zhash_delete(self->available_uuids, uuid);
                         if (self->verbose)
                         {
@@ -616,9 +666,9 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                 }
             }
 
-            else if ((streq(event, "WHISPER") || streq(event, "SHOUT")) && streq(internal_msg, "") && validate_message_type(message_type)) // user message
+            else if ((streq(event, "WHISPER") || streq(event, "SHOUT")) && streq(internal_msg, EXTERNAL_MESSAGE_STR) && validate_message_type(message_type)) // user message
             {
-                bool in_our_group = (strcmp(group, self->group_hash) == 0); // check if peer is in our group by comparing the group name sent by the peer against our group hash
+                bool in_our_group = (streq(group, self->group_hash)); // check if peer is in our group by comparing the group name sent by the peer against our group hash
                 if (self->verbose)
                 {
                     zsys_info("%s[%s] has whispered [%s]", name, uuid, message_type);
@@ -654,12 +704,12 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                 }
             }
 
-            free(event);
-            free(uuid);
-            free(name);
-            free(group);
-            free(internal_msg);
-            free(message_type);
+            destroy_ptr(event);
+            destroy_ptr(uuid);
+            destroy_ptr(name);
+            destroy_ptr(group);
+            destroy_ptr(internal_msg);
+            destroy_ptr(message_type);
             zmsg_destroy(&msg);
         }
     }
@@ -682,6 +732,7 @@ errored:
     self->exited = true;
     zsock_signal(pipe, 0);            // let zactor_new return
     zsock_signal(pipe, -local_errno); // let caller know of status
+    zsys_error("In errored (receiver_actor for %s): %s", self->name, peernet_strerror(local_errno));
     return;
 }
 
@@ -766,7 +817,7 @@ peer_t *peer_new(const char *name, const char *group, bool encryption)
     }
     self->available_uuids = zhash_new();
     assert(self->available_uuids);
-    if (zhash_insert(self->available_peers, zyre_uuid(self->node), strdup(zyre_name(self->node))))
+    if (zhash_insert(self->available_uuids, zyre_uuid(self->node), strdup(zyre_name(self->node))))
     {
         peernet_errno = -PEERNET_PEER_SELF_INSERTION_FAILED;
         goto cleanup_all;
@@ -815,7 +866,7 @@ void peer_destroy(peer_t **self_p)
     destroy_ptr(self->name);
     destroy_ptr(self->group);
     destroy_ptr(self->group_hash);
-    destroy_ptr(self_p);
+    destroy_ptr_p(self_p);
 }
 
 const char *peer_uuid(peer_t *self)
@@ -968,41 +1019,17 @@ int peer_whisper_internal(peer_t *self, const char *peer, const char *internal_m
 {
     int rc = -1;
 
-    rc = validate_name(peer);
-    if (!rc)
-    {
-        return -1;
-    }
-
-    rc = validate_message_type(message_type);
-    if (!rc)
-    {
-        return -1;
-    }
-
-    if (!data)
-    {
-        peernet_errno = -PEERNET_MESSAGE_PAYLOAD_NULL;
-        return -1;
-    }
-    if (data_len == 0)
-    {
-        peernet_errno = -PEERNET_MESSAGE_PAYLOAD_LENGTH_ZERO;
-        return -1;
-    }
-
-    char *msg_type = strdup(message_type);
-    if (!msg_type)
-    {
-        peernet_errno = -PEERNET_STRDUP_FAILED;
-        return -1;
-    }
-    str_to_lower(msg_type);
-
     zmsg_t *msg = zmsg_new();
     if (!msg)
     {
         peernet_errno = -PEERNET_ZMSG_NEW_FAILED;
+        goto clean_msg_type;
+    }
+
+    rc = zmsg_addstr(msg, self->group_hash); // somehow group info is not sent when whispering
+    if (rc)
+    {
+        peernet_errno = -PEERNET_ZMSG_STR_INSERT_FAILED;
         goto clean_msg_type;
     }
 
@@ -1013,7 +1040,7 @@ int peer_whisper_internal(peer_t *self, const char *peer, const char *internal_m
         goto clean_msg_type;
     }
 
-    rc = zmsg_addstr(msg, msg_type);
+    rc = zmsg_addstr(msg, message_type);
     if (rc)
     {
         peernet_errno = -PEERNET_ZMSG_STR_INSERT_FAILED;
@@ -1036,7 +1063,6 @@ int peer_whisper_internal(peer_t *self, const char *peer, const char *internal_m
         peernet_errno = -PEERNET_ZYRE_WHISPER_FAILED;
     }
 clean_msg_type:
-    free(msg_type);
     return rc;
 }
 
@@ -1057,6 +1083,20 @@ int peer_whisper(peer_t *self, const char *name, const char *message_type, void 
     {
         return -1;
     }
+
+    rc = validate_message_type(message_type);
+    if (!rc)
+    {
+        return -1;
+    }
+
+    char *msg_type = strdup(message_type);
+    if (!msg_type)
+    {
+        peernet_errno = -PEERNET_STRDUP_FAILED;
+        return -1;
+    }
+    str_to_lower(msg_type);
 
     if (!data)
     {
@@ -1090,7 +1130,7 @@ int peer_whisper(peer_t *self, const char *name, const char *message_type, void 
         strncpy(last_peer_name, uuid, 33);                  // update uuid
     }
 commence:
-    return peer_whisper_internal(self, uuid, "", message_type, data, data_len);
+    return peer_whisper_internal(self, uuid, EXTERNAL_MESSAGE_STR, message_type, data, data_len);
 }
 
 int peer_whispers(peer_t *self, const char *name, const char *message_type, const char *format, ...)
@@ -1102,29 +1142,32 @@ int peer_whispers(peer_t *self, const char *name, const char *message_type, cons
         0x0,
     };
     int rc = -1;
+    va_list argptr;
+    char *string = NULL;
 
     assert(self);
     assert(self->node);
-
-    if (!format)
-    {
-        peernet_errno = -PEERNET_FORMAT_STR_IS_NULL;
-        return -1;
-    }
 
     if (!validate_name(name))
     {
         return -1;
     }
 
-    if (!validate_message_type(message_type))
+    rc = validate_message_type(message_type);
+    if (!rc)
     {
         return -1;
     }
 
+    char *msg_type = strdup(message_type);
+    if (!msg_type)
+    {
+        peernet_errno = -PEERNET_STRDUP_FAILED;
+        return -1;
+    }
+    str_to_lower(msg_type);
+
     const char *uuid = NULL;
-    char *msg_type = NULL;
-    zmsg_t *msg = NULL;
     if (strncasecmp(last_name, name, PEERNET_PEER_NAME_MAXLEN) == 0) // check name against last name
     {
         uuid = last_peer_name; // if last name is the same as name, UUID is already in last_peer_name
@@ -1145,41 +1188,10 @@ int peer_whispers(peer_t *self, const char *name, const char *message_type, cons
         strncpy(last_peer_name, uuid, 33);                  // update uuid
     }
 commence:
-    msg_type = strdup(message_type);
-    if (!msg_type)
-    {
-        peernet_errno = -PEERNET_STRDUP_FAILED;
-        return -1;
-    }
-    str_to_lower(msg_type);
-
-    msg = zmsg_new();
-    if (!msg)
-    {
-        peernet_errno = -PEERNET_ZMSG_NEW_FAILED;
-        goto clean_msg_type;
-    }
-
-    rc = zmsg_addstr(msg, "");
-    if (rc)
-    {
-        peernet_errno = -PEERNET_ZMSG_STR_INSERT_FAILED;
-        goto clean_msg_type;
-    }
-
-    rc = zmsg_addstr(msg, msg_type);
-    if (rc)
-    {
-        peernet_errno = -PEERNET_ZMSG_STR_INSERT_FAILED;
-        goto clean_msg_type;
-    }
-
-    va_list argptr;
     va_start(argptr, format);
-    char *string = zsys_vprintf(format, argptr);
+    string = zsys_vprintf(format, argptr);
     va_end(argptr);
-
-    rc = zyre_whispers(self->node, uuid, "%s", string);
+    rc = peer_whisper_internal(self, uuid, EXTERNAL_MESSAGE_STR, msg_type, string, strlen(string) + 1);
     if (rc)
     {
         peernet_errno = -PEERNET_ZYRE_WHISPERS_FAILED;
@@ -1228,7 +1240,7 @@ int peer_shout(peer_t *self, const char *message_type, void *data, size_t data_l
         goto clean_msg_type;
     }
 
-    rc = zmsg_addstr(msg, "");
+    rc = zmsg_addstr(msg, EXTERNAL_MESSAGE_STR);
     if (rc)
     {
         peernet_errno = -PEERNET_ZMSG_STR_INSERT_FAILED;
@@ -1262,6 +1274,8 @@ clean_msg_type:
 int peer_shouts(peer_t *self, const char *message_type, const char *format, ...)
 {
     int rc = -1;
+    va_list argptr;
+    char *string = NULL;
 
     assert(self);
     assert(self->node);
@@ -1306,12 +1320,11 @@ int peer_shouts(peer_t *self, const char *message_type, const char *format, ...)
         goto clean_msg_type;
     }
 
-    va_list argptr;
     va_start(argptr, format);
-    char *string = zsys_vprintf(format, argptr);
+    string = zsys_vprintf(format, argptr);
     va_end(argptr);
 
-    rc = zyre_shouts(self->node, self->group_hash, "%s", string);
+    rc = peer_shout(self, msg_type, string, strlen(string) + 1);
     if (rc)
     {
         peernet_errno = -PEERNET_ZYRE_SHOUTS_FAILED;
@@ -1484,7 +1497,7 @@ int peer_start(peer_t *self)
         peernet_errno = -PEERNET_RECEIVER_FAILED;
         goto errored;
     }
-    if (!zsock_wait(self->receiver))
+    if (zsock_wait(self->receiver))
     {
         peernet_errno = -PEERNET_RECEIVER_FAILED;
         goto errored_destroy;
@@ -1502,6 +1515,8 @@ int peer_start(peer_t *self)
         }
     }
     zsock_set_rcvtimeo(receiver_sock, -1); // wait infinite
+    peernet_errno = PEERNET_SUCCESS;
+    return rc;
 errored_destroy:
     zactor_destroy(&self->receiver);
 errored:
@@ -1512,8 +1527,10 @@ void peer_stop(peer_t *self)
 {
     assert(self);
     assert(self->node);
+
     zsock_send(self->receiver, "s", "$TERM");
     zsock_wait(self->receiver);
+    zactor_destroy(&self->receiver);
 }
 
 int peer_on_message(peer_t *self, const char *message_type, const char *name, peernet_callback_t callback, void *local_args)
@@ -1554,7 +1571,6 @@ int peer_on_message(peer_t *self, const char *message_type, const char *name, pe
         goto cleanup_name;
     }
     str_to_lower(_msg_type);
-
     int len = snprintf(hash_name, sizeof(hash_name), "%s.%s", _msg_type, _name);
     if (len != strlen(_msg_type) + strlen(_name) + 1)
     {
@@ -1565,14 +1581,14 @@ int peer_on_message(peer_t *self, const char *message_type, const char *name, pe
     zhash_delete(self->on_message_cbs, hash_name);
     zhash_delete(self->on_message_cb_args, hash_name);
 
-    if ((rc = zhash_insert(self->on_message_cbs, _name, callback)))
+    if ((rc = zhash_insert(self->on_message_cbs, hash_name, callback)))
     {
         peernet_errno = -PEERNET_CALLBACK_INSERTION_FAILED;
         goto cleanup_msg_type;
     }
-    if ((rc = zhash_insert(self->on_message_cb_args, _name, local_args)))
+    if ((rc = zhash_insert(self->on_message_cb_args, hash_name, local_args)))
     {
-        zhash_delete(self->on_message_cbs, _name);
+        zhash_delete(self->on_message_cbs, hash_name);
         peernet_errno = -PEERNET_CALLBACK_LOCALARG_INSERTION_FAILED;
         goto cleanup_msg_type;
     }
@@ -1631,7 +1647,7 @@ int peer_disable_on_message(peer_t *self, const char *message_type, const char *
     }
 
     // 1. Check if message type at all registered
-    if (!zlist_exists(zhash_keys(self->on_connect_cbs), hash_name))
+    if (!zhash_exists(self->on_connect_cbs, hash_name))
     {
         peernet_errno = -PEERNET_MESSAGE_TYPE_NOT_REGISTERED;
         goto cleanup_msg_type;
@@ -1680,7 +1696,7 @@ int peer_on_connect(peer_t *self, const char *peer, peernet_callback_t _Nullable
     }
     assert(_name);
 
-    if (zlist_exists(zhash_keys(self->on_connect_cbs), _name)) // already exists
+    if (zhash_exists(self->on_connect_cbs, _name)) // already exists
     {
         zhash_delete(self->on_connect_cbs, _name);
         zhash_delete(self->on_connect_cb_args, _name);
@@ -1736,7 +1752,7 @@ int peer_disable_on_connect(peer_t *self, const char *peer)
     }
     assert(_name);
 
-    if (zlist_exists(zhash_keys(self->on_connect_cbs), _name)) // already exists
+    if (zhash_exists(self->on_connect_cbs, _name)) // already exists
     {
         zhash_delete(self->on_connect_cbs, _name);
         zhash_delete(self->on_connect_cb_args, _name);
@@ -1785,7 +1801,7 @@ int peer_on_disconnect(peer_t *self, const char *peer, peernet_callback_t _Nulla
     }
     assert(_name);
 
-    if (zlist_exists(zhash_keys(self->on_exit_cbs), _name)) // already exists
+    if (zhash_exists(self->on_exit_cbs, _name)) // already exists
     {
         zhash_delete(self->on_exit_cbs, _name);
         zhash_delete(self->on_exit_cb_args, _name);
@@ -1841,7 +1857,7 @@ int peer_disable_on_disconnect(peer_t *self, const char *peer)
     }
     assert(_name);
 
-    if (zlist_exists(zhash_keys(self->on_exit_cbs), _name)) // already exists
+    if (zhash_exists(self->on_exit_cbs, _name)) // already exists
     {
         zhash_delete(self->on_exit_cbs, _name);
         zhash_delete(self->on_exit_cb_args, _name);
@@ -1858,6 +1874,22 @@ cleanup_name:
     return rc;
 }
 
+static void __peernet_on_connect_demo(peer_t *self, const char *message_type, const char *peer, void *local, void *remote)
+{
+    printf("\n\nIn connect callback of %s: %s connected\n\n", peer_name(self), peer);
+}
+
+static void __peernet_on_exit_demo(peer_t *self, const char *message_type, const char *peer, void *local, void *remote)
+{
+    printf("\n\nIn disconnect callback of %s: %s disconnected\n\n", peer_name(self), peer);
+}
+
+static void __peernet_on_message_demo(peer_t *self, const char *message_type, const char *peer, void *local, void *remote)
+{
+    char *msg = (char *) remote;
+    printf("\n\nIn message callback of %s (type %s): %s says %s\n\n", peer_name(self), message_type, peer, msg);
+}
+
 void peer_test(bool verbose)
 {
     peer_t *peer_a = peer_new("peer_a", NULL, true);
@@ -1869,15 +1901,22 @@ void peer_test(bool verbose)
         peer_set_verbose(peer_a);
         peer_set_verbose(peer_b);
     }
-    if (peer_on_connect(peer_a, "peer_b", NULL, NULL))
+    if (peer_on_connect(peer_a, peer_name(peer_b), &__peernet_on_connect_demo, NULL))
     {
         printf("Error: %s (%d)\n", peernet_strerror(peernet_errno), peernet_errno);
     }
+    assert(!peer_on_disconnect(peer_b, peer_name(peer_a), &__peernet_on_exit_demo, NULL));
+    assert(!peer_on_message(peer_a, "CHAT", peer_name(peer_b), &__peernet_on_message_demo, NULL));
     assert(!peer_start(peer_a));
+    printf("Peer A started\n");
     zclock_sleep(100);
     assert(!peer_start(peer_b));
+    printf("Peer B started\n");
     zclock_sleep(1000);
+    assert(!peer_whispers(peer_b, peer_name(peer_a), "CHAT", "Hello, %s! I am %s, nice to meet you!", peer_name(peer_a), peer_name(peer_b)));
+    zclock_sleep(2000);
     peer_destroy(&peer_a);
+    zclock_sleep(1000);
     peer_destroy(&peer_b);
 }
 // ------------------ END CLASS FUNCTIONS -------------------- //

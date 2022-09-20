@@ -2,5 +2,5 @@
 
 int main()
 {
-    peer_test(true);
+    peer_test(false);
 }
