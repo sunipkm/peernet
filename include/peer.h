@@ -19,6 +19,14 @@ extern "C"
 {
 #endif
 
+#ifndef _Nullable
+#define _Nullable
+#endif
+
+#ifndef _Nonnull
+#define _Nonnull
+#endif
+
 /**
  * @brief PeerNet callback function that is executed on a valid event after registration
  * using peer_on_*() functions.
@@ -27,9 +35,9 @@ extern "C"
  * @param message_type Type of the message.
  * @param remote_name Name of the remote peer the event was received from.
  * @param data_local Local data. This pointer is NOT freed.
- * @param data_remote Remote data. This pointer is freed, hence data needs to be copied into a state machine to maintain persistence. This pointer is NULL for 
+ * @param data_remote Remote data. THIS POINTER IS NOT OWNED BY THE CALLBACK FUNCTION. This pointer is freed, hence data needs to be copied into a state machine to maintain persistence. This pointer is NULL for connect or disconnect callbacks.
  */
-typedef void (*peer_callback_t)(peer_t *, const char *, const char *, void * _Nullable, void * _Nullable);
+typedef void (*peer_callback_t)(peer_t * _Nonnull, const char * _Nonnull, const char * _Nonnull, void * _Nullable, void * _Nullable);
 
 /**
  * @brief Create a new pair of name belonging to a group. If group is set to NULL, the default group ('UNIVERSAL') is used.
@@ -39,14 +47,14 @@ typedef void (*peer_callback_t)(peer_t *, const char *, const char *, void * _Nu
  * @param encryption Enable/disable endpoint encryption.
  * @return peer_t * An instance of a peer on success, NULL on failure. peer_errno is set accordingly.
  */
-PEER_EXPORT peer_t *peer_new(const char *name, const char * _Nullable group, bool encryption);
+PEER_EXPORT peer_t *peer_new(const char * _Nonnull name, const char * _Nullable group, bool encryption);
 
 /**
  * @brief Close connections and destroy an instance of a peer.
  * 
  * @param self_p Pointer to local instance of peer. 
  */
-PEER_EXPORT void peer_destroy(peer_t **self_p);
+PEER_EXPORT void peer_destroy(peer_t ** _Nonnull self_p);
 
 /**
  * @brief Register a callback function to be executed on receiving a message of
@@ -59,7 +67,7 @@ PEER_EXPORT void peer_destroy(peer_t **self_p);
  * @param args Pointer to arguments to be sent to the callback function, can be NULL.
  * @return int 0 on success, -1 on error. peer_errno is set accordingly. 
  */
-PEER_EXPORT int peer_on_message(peer_t *self, const char *peer, const char *message_type, peer_callback_t _Nullable callback, void * _Nullable local_args);
+PEER_EXPORT int peer_on_message(peer_t * _Nonnull self, const char * _Nonnull peer, const char * _Nonnull message_type, peer_callback_t _Nullable callback, void * _Nullable local_args);
 
 /**
  * @brief Disable callbacks for the given message type from the given peer.
@@ -69,7 +77,7 @@ PEER_EXPORT int peer_on_message(peer_t *self, const char *peer, const char *mess
  * @param message_type Message type string. Not case sensitive. Maximum length 15 characters, only alphanumeric characters and _ are allowed.
  * @return int 0 on success, -1 on error. peer_error is set accordingly. 
  */
-PEER_EXPORT int peer_disable_on_message(peer_t *self, const char *peer, const char *message_type);
+PEER_EXPORT int peer_disable_on_message(peer_t * _Nonnull self, const char * _Nonnull peer, const char * _Nonnull message_type);
 
 /**
  * @brief Register a callback function to be executed on connection of the named
@@ -83,7 +91,7 @@ PEER_EXPORT int peer_disable_on_message(peer_t *self, const char *peer, const ch
  * @param args Pointer to the arguments to be sent to the callback function.
  * @return int 0 on success, -1 on error. peer_error is set accordingly. 
  */
-PEER_EXPORT int peer_on_connect(peer_t *self, const char *peer, peer_callback_t _Nullable callback, void * _Nullable local_args);
+PEER_EXPORT int peer_on_connect(peer_t * _Nonnull self, const char * _Nonnull peer, peer_callback_t _Nullable callback, void * _Nullable local_args);
 
 /**
  * @brief Disable an already registered callback function supposed to be executed
@@ -93,7 +101,7 @@ PEER_EXPORT int peer_on_connect(peer_t *self, const char *peer, peer_callback_t 
  * @param peer Name of the remote peer, NULL for local peer.
  * @return int 0 on success, -1 on error. peer_error is set accordingly.
  */
-PEER_EXPORT int peer_disable_on_connect(peer_t *self, const char * _Nullable peer);
+PEER_EXPORT int peer_disable_on_connect(peer_t * _Nonnull self, const char * _Nullable peer);
 
 /**
  * @brief Register a callback function to be executed on disconnection of the 
@@ -108,7 +116,7 @@ PEER_EXPORT int peer_disable_on_connect(peer_t *self, const char * _Nullable pee
  * @param args Pointer to the arguments to be sent to the callback function.
  * @return int 0 on success, -1 on error. peer_error is set accordingly. 
  */
-PEER_EXPORT int peer_on_disconnect(peer_t *self, const char * _Nullable peer, peer_callback_t _Nullable callback, void *local_args);
+PEER_EXPORT int peer_on_disconnect(peer_t * _Nonnull self, const char * _Nullable peer, peer_callback_t _Nullable callback, void * _Nullable local_args);
 
 /**
  * @brief Disable an already registered callback function supposed to be executed
@@ -118,7 +126,7 @@ PEER_EXPORT int peer_on_disconnect(peer_t *self, const char * _Nullable peer, pe
  * @param peer Name of the remote peer, NULL for local peer.
  * @return int 0 on success, -1 on error. peer_error is set accordingly.
  */
-int peer_disable_on_disconnect(peer_t *self, const char * _Nullable peer);
+int peer_disable_on_disconnect(peer_t * _Nonnull self, const char * _Nullable peer);
 
 /**
  * @brief Get error string corresponding to peer errno.
@@ -134,7 +142,7 @@ PEER_EXPORT const char *peer_strerror(int error_code);
  * @param self Local instance of peer.
  * @return const char* String containing the unique ID of the peer.
  */
-PEER_EXPORT const char *peer_uuid(peer_t *self);
+PEER_EXPORT const char *peer_uuid(peer_t * _Nonnull self);
 
 /**
  * @brief Returns the name of the local peer.
@@ -142,7 +150,7 @@ PEER_EXPORT const char *peer_uuid(peer_t *self);
  * @param self Local instance of peer.
  * @return const char* String containing the unique name of the peer.
  */
-PEER_EXPORT const char *peer_name(peer_t *self);
+PEER_EXPORT const char *peer_name(peer_t * _Nonnull self);
 
 /**
  * @brief Set verbosity of peer communications.
@@ -150,7 +158,7 @@ PEER_EXPORT const char *peer_name(peer_t *self);
  * @param self Local instance of peer.
  * @return PEER_EXPORT 
  */
-PEER_EXPORT void peer_set_verbose(peer_t *self);
+PEER_EXPORT void peer_set_verbose(peer_t * _Nonnull self);
 
 /**
  * @brief Set UDP beacon discovery port; defaults to 5772. This call overrides
@@ -163,7 +171,7 @@ PEER_EXPORT void peer_set_verbose(peer_t *self);
  * 
  * @return int 0 on success, -1 on failure. peer_errno is set to indicate error.
  */
-PEER_EXPORT int peer_set_port(peer_t *self, int port);
+PEER_EXPORT int peer_set_port(peer_t * _Nonnull self, int port);
 
 /**
  * @brief Set the peer evasiveness timeout, in milliseconds. Default is 5000.
@@ -174,7 +182,7 @@ PEER_EXPORT int peer_set_port(peer_t *self, int port);
  * @param self Local instance of peer.
  * @param interval_ms Evasiveness timeout in milliseconds. 
  */
-PEER_EXPORT int peer_set_evasive_timeout(peer_t *self, unsigned int interval_ms);
+PEER_EXPORT int peer_set_evasive_timeout(peer_t * _Nonnull self, unsigned int interval_ms);
 
 /**
  * @brief Set the peer silence timeout, in milliseconds. Default is 5000.
@@ -191,7 +199,7 @@ PEER_EXPORT int peer_set_evasive_timeout(peer_t *self, unsigned int interval_ms)
  * 
  * @return int 0 on success, -1 on error.
  */
-PEER_EXPORT int peer_set_silent_timeout(peer_t *self, unsigned int interval_ms);
+PEER_EXPORT int peer_set_silent_timeout(peer_t * _Nonnull self, unsigned int interval_ms);
 
 /**
  * @brief Set the peer expiration timeout, in milliseconds. Default is 30000.
@@ -204,7 +212,7 @@ PEER_EXPORT int peer_set_silent_timeout(peer_t *self, unsigned int interval_ms);
  * 
  * @return int 0 on success, -1 on error.
  */
-PEER_EXPORT int peer_set_expired_timeout(peer_t *self, unsigned int interval_ms);
+PEER_EXPORT int peer_set_expired_timeout(peer_t * _Nonnull self, unsigned int interval_ms);
 
 /**
  * @brief Set UDP beacon discovery interval, in milliseconds. Default is instant beacon
@@ -215,7 +223,7 @@ PEER_EXPORT int peer_set_expired_timeout(peer_t *self, unsigned int interval_ms)
  * 
  * @return int 0 on success, -1 on error. 
  */
-PEER_EXPORT int peer_set_interval(peer_t *self, size_t interval_ms);
+PEER_EXPORT int peer_set_interval(peer_t * _Nonnull self, size_t interval_ms);
 
 /**
  * @brief Set the network interface for UDP beacons. If you do not set this, CZMQ
@@ -227,7 +235,7 @@ PEER_EXPORT int peer_set_interval(peer_t *self, size_t interval_ms);
  * @param self Local instance of peer.
  * @param value Interface name or local IP address on the interface. 
  */
-PEER_EXPORT void peer_set_interface(peer_t *self, const char *value);
+PEER_EXPORT void peer_set_interface(peer_t * _Nonnull self, const char * _Nonnull value);
 
 /**
  * @brief By default, PeerNet binds to an ephemeral TCP port and broadcasts the 
@@ -240,7 +248,7 @@ PEER_EXPORT void peer_set_interface(peer_t *self, const char *value);
  * successful, -1 otherwise.
  * 
  */
-PEER_EXPORT int peer_set_endpoint(peer_t *self, const char *format, ...) CHECK_PRINTF(2);
+PEER_EXPORT int peer_set_endpoint(peer_t * _Nonnull self, const char * _Nonnull format, ...) CHECK_PRINTF(2);
 
 /**
  * @brief Set up gossip discovery of other peers. At least one peer in the cluster
@@ -251,7 +259,7 @@ PEER_EXPORT int peer_set_endpoint(peer_t *self, const char *format, ...) CHECK_P
  * 
  * @param format Format string, followed by inputs. 
  */
-PEER_EXPORT void peer_gossip_bind(peer_t *self, const char *format, ...) CHECK_PRINTF(2);
+PEER_EXPORT void peer_gossip_bind(peer_t * _Nonnull self, const char * _Nonnull format, ...) CHECK_PRINTF(2);
 
 /**
  * @brief Set up gossip discovery of other peers. A peer may connect to multiple other
@@ -260,7 +268,7 @@ PEER_EXPORT void peer_gossip_bind(peer_t *self, const char *format, ...) CHECK_P
  * 
  * @param format Format string, followed by inputs.
  */
-PEER_EXPORT void peer_gossip_connect(peer_t *self, const char *format, ...) CHECK_PRINTF(2);
+PEER_EXPORT void peer_gossip_connect(peer_t * _Nonnull self, const char * _Nonnull format, ...) CHECK_PRINTF(2);
 
 /**
  * @brief Start the peer, after setting the header values. A peer starts discovery and
@@ -269,7 +277,7 @@ PEER_EXPORT void peer_gossip_connect(peer_t *self, const char *format, ...) CHEC
  * @param self Local instance of peer.
  * @return int 0 on success, -1 on error. 
  */
-PEER_EXPORT int peer_start(peer_t *self);
+PEER_EXPORT int peer_start(peer_t * _Nonnull self);
 
 /**
  * @brief Stop the peer. This signals to the other peers that this peer will go away.
@@ -277,7 +285,7 @@ PEER_EXPORT int peer_start(peer_t *self);
  * 
  * @param self Local instance of peer. 
  */
-PEER_EXPORT void peer_stop(peer_t *self);
+PEER_EXPORT void peer_stop(peer_t * _Nonnull self);
 
 /**
  * @brief Send (whisper) a message to a single peer on the network. Destroys
@@ -290,7 +298,7 @@ PEER_EXPORT void peer_stop(peer_t *self);
  * @param data_len Length of the memory pointed to by data
  * @return int Returns 0 on success, -1 on failure.
  */
-PEER_EXPORT int peer_whisper(peer_t *self, const char *name, const char *message_type, void *data, size_t data_len);
+PEER_EXPORT int peer_whisper(peer_t * _Nonnull self, const char * _Nonnull name, const char * _Nonnull message_type, void * _Nonnull data, size_t data_len);
 
 /**
  * @brief Send (whisper) a formatted string to a single peer on the network.
@@ -301,7 +309,7 @@ PEER_EXPORT int peer_whisper(peer_t *self, const char *name, const char *message
  * 
  * @param format Format string for the message.
  */
-PEER_EXPORT int peer_whispers(peer_t *self, const char *name, const char *message_type, const char *format, ...) CHECK_PRINTF(4);
+PEER_EXPORT int peer_whispers(peer_t * _Nonnull self, const char * _Nonnull name, const char * _Nonnull message_type, const char * _Nonnull format, ...) CHECK_PRINTF(4);
 
 /**
  * @brief Send (shout) a message to all peers on the network. Destroys
@@ -313,7 +321,7 @@ PEER_EXPORT int peer_whispers(peer_t *self, const char *name, const char *messag
  * @param data_len Length of the memory pointed to by data
  * @return int Returns 0 on success, -1 on failure.
  */
-PEER_EXPORT int peer_shout(peer_t *self, const char *message_type, void *data, size_t data_len);
+PEER_EXPORT int peer_shout(peer_t * _Nonnull self, const char * _Nonnull message_type, void * _Nonnull data, size_t data_len);
 
 /**
  * @brief Send (shout) a formatted string to all peers on the network.
@@ -324,7 +332,7 @@ PEER_EXPORT int peer_shout(peer_t *self, const char *message_type, void *data, s
  * 
  * @param format Format string for the message.
  */
-PEER_EXPORT int peer_shouts(peer_t *self, const char *message_type, const char *format, ...) CHECK_PRINTF(3);
+PEER_EXPORT int peer_shouts(peer_t * _Nonnull self, const char * _Nonnull message_type, const char * _Nonnull format, ...) CHECK_PRINTF(3);
 
 /**
  * @brief Return a list of peers this peer (in the same group) is connected to.
@@ -332,7 +340,7 @@ PEER_EXPORT int peer_shouts(peer_t *self, const char *message_type, const char *
  * @param self Local instance of peer.
  * @return zhash_t * List of peers  
  */
-PEER_EXPORT zhash_t *peer_list_connected(peer_t *self);
+PEER_EXPORT zhash_t *peer_list_connected(peer_t * _Nonnull self);
 
 /**
  * @brief Return the endpoint of a connected peer.
@@ -341,7 +349,7 @@ PEER_EXPORT zhash_t *peer_list_connected(peer_t *self);
  * @param name Remote peer name.
  * @return char* Remote peer address, caller owns the object and must free it when done.
  */
-PEER_EXPORT char *peer_get_remote_address(peer_t *self, const char *name);
+PEER_EXPORT char *peer_get_remote_address(peer_t * _Nonnull self, const char * _Nonnull name);
 
 /**
  * @brief Return the value of a header of a connected peer.
@@ -350,14 +358,14 @@ PEER_EXPORT char *peer_get_remote_address(peer_t *self, const char *name);
  * @param name Remote peer name.
  * @return char* Returns NULL if peer or key does not exist, caller owns the object and must free it when done.
  */
-PEER_EXPORT char *peer_get_remote_header_value(peer_t *self, const char *name);
+PEER_EXPORT char *peer_get_remote_header_value(peer_t * _Nonnull self, const char * _Nonnull name);
 
 /**
  * @brief Print information about this peer.
  * 
  * @param self Local instance of peer.
  */
-PEER_EXPORT void peer_print(peer_t *self);
+PEER_EXPORT void peer_print(peer_t * _Nonnull self);
 
 /**
  * @brief Return the PeerNet version for the run-time API detection.
@@ -380,7 +388,7 @@ PEER_EXPORT void peer_test(bool verbose);
  * @param self Local instance of peer.
  * @return zyre_t * Class instance providing backend connectivity.
  */
-PEER_EXPORT zyre_t *peer_get_backend(peer_t *self);
+PEER_EXPORT zyre_t *peer_get_backend(peer_t * _Nonnull self);
 
 enum PEER_ERRORS
 {

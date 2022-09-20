@@ -1,0 +1,20 @@
+<project
+    name = "Peer"
+
+    description = "an open-source framework for proximity-based P2P apps"
+    script = "zproject.gsl"
+    license = "MPL-2.0"
+    email = "zeromq-dev@lists.zeromq.org"
+    url = "https://github.com/zeromq/zyre"
+    repository = "https://github.com/zeromq/zyre"
+    unique_class_name = "0"
+    >
+    <include filename = "license.xml" />
+    <version major = "0" minor = "1" patch = "0" />
+    <abi current = "0" revision = "1" age = "0" />
+
+    <use project = "czmq" />
+    <use project = "zyre" />
+    <class name = "peer" />
+    <class name = "peer_md5sum" private = "1" />
+</project>
