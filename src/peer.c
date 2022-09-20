@@ -15,7 +15,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <string.h>
-#include "utilities/md5sum.h"
+#include "peer_md5sum.h"
 
 #define eprintlf(fmt, ...)                                                      \
     {                                                                           \
@@ -776,7 +776,7 @@ peer_t *peer_new(const char *name, const char *group, bool encryption)
     assert(_name);
     str_to_lower(_name);
     // 2a. Create the hash
-    group_hash = md5String(_group);
+    group_hash = peer_md5String(_group);
     if (!group_hash)
     {
         peer_errno = -PEER_GROUP_HASH_FAILED;

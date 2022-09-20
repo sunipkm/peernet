@@ -2,7 +2,7 @@ CC=gcc
 EDCFLAGS= -O2 -I ./ -I ./include `pkg-config libzyre --cflags` `pkg-config libczmq --cflags` `pkg-config libzmq --cflags` $(CFLAGS)
 EDLDFLAGS= `pkg-config libzyre --libs` `pkg-config libczmq --libs` `pkg-config libzmq --libs` $(LDFLAGS)
 
-objs = src/peer.o utilities/md5sum.o test.o
+objs = src/peer.o src/peer_md5sum.o test.o
 
 all: $(objs)
 	$(CC) -o test.out $(objs) $(EDLDFLAGS)

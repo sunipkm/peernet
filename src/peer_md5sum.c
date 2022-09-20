@@ -3,7 +3,7 @@
  * and modified slightly to be functionally identical but condensed into control structures.
  */
 
-#include "md5sum.h"
+#include "peer_md5sum.h"
 
 /*
  * Constants defined by the MD5 algorithm
@@ -12,6 +12,8 @@
 #define B 0xefcdab89
 #define C 0x98badcfe
 #define D 0x10325476
+
+uint32_t rotateLeft(uint32_t x, uint32_t n);
 
 static uint32_t S[] = {7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
                        5,  9, 14, 20, 5,  9, 14, 20, 5,  9, 14, 20, 5,  9, 14, 20,
@@ -58,7 +60,7 @@ static uint8_t PADDING[] = {0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 /*
  * Initialize a context
  */
-void md5Init(MD5Context *ctx){
+void peer_md5Init(peer_md5context_t *ctx){
 	ctx->size = (uint64_t)0;
 
 	ctx->buffer[0] = (uint32_t)A;
@@ -70,10 +72,10 @@ void md5Init(MD5Context *ctx){
 /*
  * Add some amount of input to the context
  *
- * If the input fills out a block of 512 bits, apply the algorithm (md5Step)
+ * If the input fills out a block of 512 bits, apply the algorithm (peer_md5Step)
  * and save the result in the buffer. Also updates the overall size.
  */
-void md5Update(MD5Context *ctx, uint8_t *input_buffer, size_t input_len){
+void peer_md5Update(peer_md5context_t *ctx, uint8_t *input_buffer, size_t input_len){
 	uint32_t input[16];
 	unsigned int offset = ctx->size % 64;
 	ctx->size += (uint64_t)input_len;
@@ -96,7 +98,7 @@ void md5Update(MD5Context *ctx, uint8_t *input_buffer, size_t input_len){
 						   (uint32_t)(ctx->input[(j * 4) + 1]) <<  8 |
 						   (uint32_t)(ctx->input[(j * 4)]);
 			}
-			md5Step(ctx->buffer, input);
+			peer_md5Step(ctx->buffer, input);
 			offset = 0;
 		}
 	}
@@ -106,13 +108,13 @@ void md5Update(MD5Context *ctx, uint8_t *input_buffer, size_t input_len){
  * Pad the current input to get to 448 bytes, append the size in bits to the very end,
  * and save the result of the final iteration into digest.
  */
-void md5Finalize(MD5Context *ctx){
+void peer_md5Finalize(peer_md5context_t *ctx){
 	uint32_t input[16];
 	unsigned int offset = ctx->size % 64;
 	unsigned int padding_length = offset < 56 ? 56 - offset : (56 + 64) - offset;
 
 	// Fill in the padding andndo the changes to size that resulted from the update
-	md5Update(ctx, PADDING, padding_length);
+	peer_md5Update(ctx, PADDING, padding_length);
 	ctx->size -= (uint64_t)padding_length;
 
 	// Do a final update (internal to this function)
@@ -126,7 +128,7 @@ void md5Finalize(MD5Context *ctx){
 	input[14] = (uint32_t)(ctx->size * 8);
 	input[15] = (uint32_t)((ctx->size * 8) >> 32);
 
-	md5Step(ctx->buffer, input);
+	peer_md5Step(ctx->buffer, input);
 
 	// Move the result into digest (convert from little-endian)
 	for(unsigned int i = 0; i < 4; ++i){
@@ -140,7 +142,7 @@ void md5Finalize(MD5Context *ctx){
 /*
  * Step on 512 bits of input with the main MD5 algorithm.
  */
-void md5Step(uint32_t *buffer, uint32_t *input){
+void peer_md5Step(uint32_t *buffer, uint32_t *input){
 	uint32_t AA = buffer[0];
 	uint32_t BB = buffer[1];
 	uint32_t CC = buffer[2];
@@ -186,29 +188,29 @@ void md5Step(uint32_t *buffer, uint32_t *input){
 /*
  * Functions that will return a pointer to the hash of the provided input
  */
-uint8_t* md5String(char *input){
-	MD5Context ctx;
-	md5Init(&ctx);
-	md5Update(&ctx, (uint8_t *)input, strlen(input));
-	md5Finalize(&ctx);
+uint8_t* peer_md5String(char *input){
+	peer_md5context_t ctx;
+	peer_md5Init(&ctx);
+	peer_md5Update(&ctx, (uint8_t *)input, strlen(input));
+	peer_md5Finalize(&ctx);
 
 	uint8_t *result = malloc(16);
 	memcpy(result, ctx.digest, 16);
 	return result;
 }
 
-uint8_t* md5File(FILE *file){
+uint8_t* peer_md5File(FILE *file){
 	char *input_buffer = malloc(1024);
 	size_t input_size = 0;
 
-	MD5Context ctx;
-	md5Init(&ctx);
+	peer_md5context_t ctx;
+	peer_md5Init(&ctx);
 
 	while((input_size = fread(input_buffer, 1, 1024, file)) > 0){
-		md5Update(&ctx, (uint8_t *)input_buffer, input_size);
+		peer_md5Update(&ctx, (uint8_t *)input_buffer, input_size);
 	}
 
-	md5Finalize(&ctx);
+	peer_md5Finalize(&ctx);
 
 	free(input_buffer);
 
