@@ -15,8 +15,8 @@
 #include "peernet_library.h"
 
 #ifdef __cplusplus
-// extern "C"
-// {
+extern "C"
+{
 #endif
 
 /**
@@ -382,7 +382,7 @@ PEERNET_EXPORT void peer_test(bool verbose);
  */
 PEERNET_EXPORT zyre_t *peer_get_backend(peer_t *self);
 
-typedef enum
+enum PEERNET_ERRORS
 {
     PEERNET_SUCCESS = 0, /*!< Operation was successful. */
     PEERNET_PEER_EXISTS = 1,
@@ -431,9 +431,9 @@ typedef enum
     PEERNET_STRCONCAT_FAILED = 44,
     PEERNET_RECEIVER_FAILED = 45,
     PEERNET_MAX_ERROR
-} PEERNET_ERRORS;
+};
 #ifdef __cplusplus
-// }
+}
 #endif
 
 #endif
