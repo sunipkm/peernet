@@ -1319,14 +1319,14 @@ clean_msg_type:
     return rc;
 }
 
-zhash_t *peernet_peers(peer_t *self)
+zhash_t *peer_list_connected(peer_t *self)
 {
     assert(self);
     assert(self->node);
     return self->available_peers;
 }
 
-char *peernet_peer_address(peer_t *self, const char *name)
+char *peer_get_remote_address(peer_t *self, const char *name)
 {
     static char last_name[16] = {
         0x0,
@@ -1376,7 +1376,7 @@ commence:
     return ret;
 }
 
-char *peernet_peer_header_value(peer_t *self, const char *name)
+char *peer_get_remote_header_value(peer_t *self, const char *name)
 {
     static char last_name[16] = {
         0x0,

@@ -332,7 +332,7 @@ PEERNET_EXPORT int peer_shouts(peer_t *self, const char *message_type, const cha
  * @param self Local instance of peer.
  * @return zhash_t * List of peers  
  */
-PEERNET_EXPORT zhash_t *peernet_peers(peer_t *self);
+PEERNET_EXPORT zhash_t *peer_list_connected(peer_t *self);
 
 /**
  * @brief Return the endpoint of a connected peer.
@@ -341,7 +341,7 @@ PEERNET_EXPORT zhash_t *peernet_peers(peer_t *self);
  * @param name Remote peer name.
  * @return char* Remote peer address, caller owns the object and must free it when done.
  */
-PEERNET_EXPORT char *peernet_peer_address(peer_t *self, const char *name);
+PEERNET_EXPORT char *peer_get_remote_address(peer_t *self, const char *name);
 
 /**
  * @brief Return the value of a header of a connected peer.
@@ -350,7 +350,7 @@ PEERNET_EXPORT char *peernet_peer_address(peer_t *self, const char *name);
  * @param name Remote peer name.
  * @return char* Returns NULL if peer or key does not exist, caller owns the object and must free it when done.
  */
-PEERNET_EXPORT char *peernet_peer_header_value(peer_t *self, const char *name);
+PEERNET_EXPORT char *peer_get_remote_header_value(peer_t *self, const char *name);
 
 /**
  * @brief Print information about this peer.
