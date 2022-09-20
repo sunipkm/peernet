@@ -34,4 +34,6 @@ PEER_PRIVATE void peer_md5sum_md5Step(uint32_t *buffer, uint32_t *input);
 PEER_PRIVATE uint8_t* peer_md5sum_md5String(char *input);
 PEER_PRIVATE uint8_t* peer_md5sum_md5File(FILE *file);
 
+PEER_PRIVATE void peer_md5sum_test(bool verbose);
+
 #endif // __peer_md5sum_MD5SUM_H_INCLUDED__

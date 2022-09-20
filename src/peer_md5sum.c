@@ -225,3 +225,16 @@ uint8_t* peer_md5sum_md5File(FILE *file){
 uint32_t rotateLeft(uint32_t x, uint32_t n){
 	return (x << n) | (x >> (32 - n));
 }
+
+void peer_md5sum_test(bool verbose)
+{
+    char hash[33] = {0x0, };
+    uint8_t *out = peer_md5sum_md5String("universal");
+    assert(out);
+    for (int i = 0; i < 16; i++)
+    {
+        snprintf(&(hash[i * 2]), 3, "%02X", out[i]);
+    }
+    assert(strncasecmp("1C8A2A7C1511C01EE5158EC2ED99B749", hash, 32) == 0);
+    free(out);
+}
