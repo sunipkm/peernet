@@ -111,22 +111,22 @@ struct _peer_t
 
 // ------------------ HELPER FUNCTIONS -------------------- //
 
-#define destroy_ptr(ptr)                             \
-    {                                                \
-        if (ptr)                                     \
-        {                                            \
-            free(ptr);                               \
-            ptr = NULL;                              \
-        }                                            \
+#define destroy_ptr(ptr) \
+    {                    \
+        if (ptr)         \
+        {                \
+            free(ptr);   \
+            ptr = NULL;  \
+        }                \
     }
 
-#define destroy_ptr_p(ptr_p)                                         \
-    {                                                                \
-        if (*ptr_p)                                                  \
-        {                                                            \
-            free(*ptr_p);                                            \
-            *ptr_p = NULL;                                           \
-        }                                                            \
+#define destroy_ptr_p(ptr_p) \
+    {                        \
+        if (*ptr_p)          \
+        {                    \
+            free(*ptr_p);    \
+            *ptr_p = NULL;   \
+        }                    \
     }
 
 /**
@@ -1503,13 +1503,13 @@ int peer_start(peer_t *self)
         goto errored_destroy;
     }
     zsock_t *receiver_sock = zactor_sock(self->receiver);
-    zsock_set_rcvtimeo(receiver_sock, 100); // wait 100 ms
+    zsock_set_rcvtimeo(receiver_sock, 1000); // wait 100 ms
     int status = -PEERNET_MAX_ERROR;
     if (!zsock_recv(receiver_sock, "i", &status))
     {
         if (status == -PEERNET_PEER_EXISTS)
         {
-            zsys_error("Peer name %s already exists, exiting...");
+            zsys_error("Peer name %s already exists, exiting...", self->name);
             rc = -PEERNET_PEER_EXISTS;
             goto errored_destroy;
         }
@@ -1533,7 +1533,7 @@ void peer_stop(peer_t *self)
     zactor_destroy(&self->receiver);
 }
 
-int peer_on_message(peer_t *self, const char *message_type, const char *name, peernet_callback_t callback, void *local_args)
+int peer_on_message(peer_t *self, const char *name, const char *message_type, peernet_callback_t callback, void *local_args)
 {
     int rc = -1;
 
@@ -1600,7 +1600,7 @@ cleanup_name:
     return rc;
 }
 
-int peer_disable_on_message(peer_t *self, const char *message_type, const char *name)
+int peer_disable_on_message(peer_t *self, const char *name, const char *message_type)
 {
     int rc = -1;
 
@@ -1886,7 +1886,7 @@ static void __peernet_on_exit_demo(peer_t *self, const char *message_type, const
 
 static void __peernet_on_message_demo(peer_t *self, const char *message_type, const char *peer, void *local, void *remote)
 {
-    char *msg = (char *) remote;
+    char *msg = (char *)remote;
     printf("\n\nIn message callback of %s (type %s): %s says %s\n\n", peer_name(self), message_type, peer, msg);
 }
 
@@ -1906,7 +1906,7 @@ void peer_test(bool verbose)
         printf("Error: %s (%d)\n", peernet_strerror(peernet_errno), peernet_errno);
     }
     assert(!peer_on_disconnect(peer_b, peer_name(peer_a), &__peernet_on_exit_demo, NULL));
-    assert(!peer_on_message(peer_a, "CHAT", peer_name(peer_b), &__peernet_on_message_demo, NULL));
+    assert(!peer_on_message(peer_a, peer_name(peer_b), "CHAT", &__peernet_on_message_demo, NULL));
     assert(!peer_start(peer_a));
     printf("Peer A started\n");
     zclock_sleep(100);

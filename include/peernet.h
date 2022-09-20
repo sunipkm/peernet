@@ -53,23 +53,23 @@ PEERNET_EXPORT void peer_destroy(peer_t **self_p);
  * 'message_type' from peer 'peer'.
  * 
  * @param self Local instance of peer.
- * @param message_type Message type string. Not case sensitive. Maximum length 15 characters, only alphanumeric characters and _ are allowed.
  * @param peer Name of the remote peer.
+ * @param message_type Message type string. Not case sensitive. Maximum length 15 characters, only alphanumeric characters and _ are allowed.
  * @param callback Pointer to the function of form @link{peernet_callback_t}, can be NULL.
  * @param args Pointer to arguments to be sent to the callback function, can be NULL.
  * @return int 0 on success, -1 on error. peernet_errno is set accordingly. 
  */
-PEERNET_EXPORT int peer_on_message(peer_t *self, const char *message_type, const char *peer, peernet_callback_t _Nullable callback, void * _Nullable local_args);
+PEERNET_EXPORT int peer_on_message(peer_t *self, const char *peer, const char *message_type, peernet_callback_t _Nullable callback, void * _Nullable local_args);
 
 /**
  * @brief Disable callbacks for the given message type from the given peer.
  * 
  * @param self Local instance of peer.
- * @param message_type Message type string. Not case sensitive. Maximum length 15 characters, only alphanumeric characters and _ are allowed.
  * @param peer Name of the remote peer.
+ * @param message_type Message type string. Not case sensitive. Maximum length 15 characters, only alphanumeric characters and _ are allowed.
  * @return int 0 on success, -1 on error. peernet_error is set accordingly. 
  */
-PEERNET_EXPORT int peer_disable_on_message(peer_t *self, const char *message_type, const char *peer);
+PEERNET_EXPORT int peer_disable_on_message(peer_t *self, const char *peer, const char *message_type);
 
 /**
  * @brief Register a callback function to be executed on connection of the named
