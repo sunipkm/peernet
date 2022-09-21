@@ -1,5 +1,5 @@
 add_executable(
-    chat
+    chat.exe
     "${SOURCE_DIR}/examples/chat/chat.c"
 )
 
@@ -10,7 +10,7 @@ else ()
 endif ()
 
 target_link_libraries(
-    chat
+    chat.exe
     ${peer_target}
     ${ZYRE_LIBRARIES}
     ${LIBZMQ_LIBRARIES}
@@ -18,7 +18,7 @@ target_link_libraries(
     ${OPTIONAL_LIBRARIES}
 )
 set_target_properties(
-    chat
+    chat.exe
     PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${SOURCE_DIR}/examples/chat"
 )
 

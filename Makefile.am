@@ -45,6 +45,7 @@ endif
 
 EXTRA_DIST += \
     src/peer_md5sum.h \
+    README.md \
     src/peer_classes.h
 
 # NOTE: this "include" syntax is not a "make" but an "autotools" keyword,
