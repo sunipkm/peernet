@@ -25,10 +25,15 @@
 
 #define CALLBACK_CMD_STR "CALLBACK"
 #define CALLBACK_CONNECT_STR "CONNECT"
+#define CALLBACK_CONNECT_ALL_STR "CONNECT_ALL"
 #define CALLBACK_DISCONNECT_STR "LEAVE"
+#define CALLBACK_DISCONNECT_ALL_STR "LEAVE_ALL"
 #define CALLBACK_MESSAGE_STR "MESSAGE"
 #define INTERNAL_MESSAGE_STR "INTERNAL_MSG"
 #define EXTERNAL_MESSAGE_STR "EXTERNAL_MSG"
+#define CALLBACK_EVASIVE_STR "EVASIVE"
+#define CALLBACK_SILENT_STR "SILENT"
+#define PEER_EXIT_COMMAND "PEER_EXIT_REQUESTED"
 
 static const char *peernet_error_str[PEER_MAX_ERROR] = {
     "Success",                                              // 0
@@ -76,7 +81,8 @@ static const char *peernet_error_str[PEER_MAX_ERROR] = {
     "Peer message type not registered",                     // 42
     "Peer callback does not exist",                         // 43
     "Peer string concatenation failed",                     // 44
-    "Peer receiver initialization failed"                   // 45
+    "Peer receiver initialization failed",                  // 45
+    "Peer booted because of inactivity"                     // 46
 };
 
 #ifdef __WINDOWS__
@@ -93,18 +99,25 @@ struct _peer_t
     char *name;
     char *group;
     char *group_hash;
+    bool started;
     bool exited;
     bool verbose;
-    peer_callback_t self_on_connect_cb;
-    void *self_on_connect_cb_args;
-    peer_callback_t self_on_exit_cb;
-    void *self_on_exit_cb_args;
+    int retry_count; // max number of retries per peer
+    peer_callback_t all_on_connect_cb;
+    void *all_on_connect_cb_args;
+    peer_callback_t all_on_disconnect_cb;
+    void *all_on_disconnect_cb_args;
     zhash_t *available_peers;    // zhash of peers, keyed by name
     zhash_t *available_uuids;    // zhash of peers, keyed by uuid
+    zhash_t *peer_retries;       // zhash of retries, keyed by name
     zhash_t *on_connect_cbs;     // zhash of callback fcns, keyed by name
     zhash_t *on_connect_cb_args; // zhash of callback fcn args, keyed by name
     zhash_t *on_exit_cbs;        // zhash of callback fcns, keyed by name
-    zhash_t *on_exit_cb_args;    // zhash of callback fcns, keyed by name
+    zhash_t *on_exit_cb_args;    // zhash of callback fcn args, keyed by name
+    zhash_t *on_silent_cbs;      // zhash of callback fcns, keyed by name
+    zhash_t *on_silent_cb_args;  // zhash of callback fcn args, keyed by name
+    zhash_t *on_evasive_cbs;     // zhash of callback fcns, keyed by name
+    zhash_t *on_evasive_cb_args; // zhash of callback fcn args, keyed by name
     zhash_t *on_message_cbs;     // callback functions keyed by message type
     zhash_t *on_message_cb_args; // callback function args keyed by message type
 };
@@ -181,12 +194,12 @@ static inline bool valid_name_str(const char *name)
     return name_valid;
 }
 
-static inline void str_to_lower(char *name)
+static inline void str_to_upper(char *name)
 {
     char *s = name;
     while (*s)
     {
-        *s = tolower((unsigned char)*s);
+        *s = toupper((unsigned char)*s);
         s++;
     }
 }
@@ -201,7 +214,7 @@ static const char *find_name(peer_t *self, const char *name)
     char *_name = strdup(name);
     assert(_name);
 
-    str_to_lower(_name);
+    str_to_upper(_name);
 
     const char *uuid = zhash_lookup(self->available_peers, _name);
     destroy_ptr(_name);
@@ -288,6 +301,50 @@ static inline int validate_message_type(const char *message_type)
     peer_errno = PEER_SUCCESS;
     return 1;
 }
+
+static inline void peer_invoke_callback(peer_t *self, const char *name, const char *callback_type)
+{
+    zmsg_t *callback_msg = zmsg_new();
+    if (!callback_msg)
+    {
+        zsys_error("Could not allocate memory to request callback execution.");
+    }
+    else
+    {
+        zmsg_addstr(callback_msg, CALLBACK_CMD_STR);
+        zmsg_addstr(callback_msg, callback_type);
+        zmsg_addstr(callback_msg, "FIXED_CB"); // message_type
+        zmsg_addstr(callback_msg, name);       // peer name
+        if (self->verbose)
+        {
+            zsys_info("To Callback: %s %s %s %s", CALLBACK_CMD_STR, callback_type, "FIXED_CB", name);
+        }
+        zmsg_send(&callback_msg, self->callback_driver);
+    }
+}
+
+static inline void peer_invoke_message_callback(peer_t *self, const char *name, const char *message_type, zframe_t *data)
+{
+    zmsg_t *callback_msg = zmsg_new();
+    if (!callback_msg)
+    {
+        zsys_error("Could not allocate memory to request callback execution.");
+    }
+    else
+    {
+        zmsg_addstr(callback_msg, CALLBACK_CMD_STR);
+        zmsg_addstr(callback_msg, CALLBACK_MESSAGE_STR);
+        zmsg_addstr(callback_msg, message_type); // message_type
+        zmsg_addstr(callback_msg, name);         // peer name
+        zmsg_append(callback_msg, &data);
+        if (self->verbose)
+        {
+            zsys_info("To Callback: %s %s %s %s", CALLBACK_CMD_STR, CALLBACK_MESSAGE_STR, message_type, name);
+        }
+        zmsg_send(&callback_msg, self->callback_driver);
+    }
+}
+
 // ---------------- END HELPER FUNCTIONS -------------------- //
 
 static void callback_actor(zsock_t *pipe, void *arg)
@@ -376,6 +433,11 @@ static void callback_actor(zsock_t *pipe, void *arg)
                     cb = zhash_lookup(self->on_connect_cbs, remote_name);
                     local_args = zhash_lookup(self->on_connect_cb_args, remote_name);
                 }
+                else if (streq(callback_type, CALLBACK_CONNECT_ALL_STR)) // for on_connect calls
+                {
+                    cb = self->all_on_connect_cb;
+                    local_args = self->all_on_connect_cb_args;
+                }
                 else if (streq(callback_type, CALLBACK_DISCONNECT_STR)) // for on_disconnect calls
                 {
                     if (!zhash_exists(self->on_exit_cbs, remote_name))
@@ -397,6 +459,55 @@ static void callback_actor(zsock_t *pipe, void *arg)
                     }
                     cb = zhash_lookup(self->on_exit_cbs, remote_name);
                     local_args = zhash_lookup(self->on_exit_cb_args, remote_name);
+                }
+                else if (streq(callback_type, CALLBACK_DISCONNECT_ALL_STR)) // for on_connect calls
+                {
+                    cb = self->all_on_disconnect_cb;
+                    local_args = self->all_on_disconnect_cb_args;
+                }
+                else if (streq(callback_type, CALLBACK_EVASIVE_STR)) // for on_disconnect calls
+                {
+                    if (!zhash_exists(self->on_evasive_cbs, remote_name))
+                    {
+                        if (self->verbose)
+                        {
+                            zsys_error("Callback Actor: Evasive callback for %s not registered.", remote_name);
+                        }
+                        goto loop_reset;
+                    }
+                    if (!zhash_exists(self->on_evasive_cb_args, remote_name))
+                    {
+                        if (self->verbose)
+                        {
+                            zsys_error("Callback Actor: Evasive callback local argument for %s not registered.", remote_name);
+                        }
+                        zhash_delete(self->on_evasive_cbs, remote_name);
+                        goto loop_reset;
+                    }
+                    cb = zhash_lookup(self->on_evasive_cbs, remote_name);
+                    local_args = zhash_lookup(self->on_evasive_cb_args, remote_name);
+                }
+                else if (streq(callback_type, CALLBACK_SILENT_STR)) // for on_disconnect calls
+                {
+                    if (!zhash_exists(self->on_silent_cbs, remote_name))
+                    {
+                        if (self->verbose)
+                        {
+                            zsys_error("Callback Actor: Silent callback for %s not registered.", remote_name);
+                        }
+                        goto loop_reset;
+                    }
+                    if (!zhash_exists(self->on_silent_cb_args, remote_name))
+                    {
+                        if (self->verbose)
+                        {
+                            zsys_error("Callback Actor: Silent callback local argument for %s not registered.", remote_name);
+                        }
+                        zhash_delete(self->on_silent_cbs, remote_name);
+                        goto loop_reset;
+                    }
+                    cb = zhash_lookup(self->on_silent_cbs, remote_name);
+                    local_args = zhash_lookup(self->on_silent_cb_args, remote_name);
                 }
                 else if (streq(callback_type, CALLBACK_MESSAGE_STR)) // for on_message calls
                 {
@@ -475,7 +586,7 @@ static void callback_actor(zsock_t *pipe, void *arg)
     return;
 errored:
     assert(!zsock_signal(pipe, PEER_SUCCESS)); // return zactor_new
-    assert(!zsock_signal(pipe, -local_errno));    // return error message to caller
+    assert(!zsock_signal(pipe, -local_errno)); // return error message to caller
     return;
 }
 
@@ -485,6 +596,7 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
     int local_errno = PEER_SUCCESS;
     zyre_t *node = self->node;
     int rc = 0;
+    bool exit_on_request = false;
     self->callback_driver = zactor_new(callback_actor, self);
     if (!self->callback_driver)
     {
@@ -560,6 +672,13 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                     zsock_send(pipe, "i", -PEER_EXISTS);
                     terminated = true;
                 }
+                else if (streq(message_type, PEER_EXIT_COMMAND))
+                {
+                    zsys_error("%s> Received EXIT request from %s", self->name, name);
+                    exit_on_request = true;
+                    zsock_send(pipe, "i", -PEER_BOOTED);
+                    terminated = true;
+                }
                 else if (streq(message_type, "NAME_OKAY"))
                 {
                     zsock_send(pipe, "i", PEER_SUCCESS);
@@ -578,6 +697,10 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                     if (!zhash_insert(self->available_peers, name, strdup(uuid))) // peer name not already in available peers list
                     {
                         zhash_insert(self->available_uuids, uuid, strdup(name)); // update inverse list as well
+                        int *retry_count = (int *)malloc(sizeof(int));
+                        assert(retry_count);
+                        *retry_count = self->retry_count;
+                        zhash_insert(self->peer_retries, name, retry_count);
                         if (self->verbose)
                         {
                             zsys_info("Peer name OK: %s, sending name induction message to %s!", name, uuid);
@@ -587,23 +710,9 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                         {
                             zsys_error("Peer name OK: %s, could not send message to %s!", name, uuid);
                         }
-                        zmsg_t *callback_msg = zmsg_new();
-                        if (!callback_msg)
-                        {
-                            zsys_error("Could not allocate memory to request callback execution.");
-                        }
-                        else
-                        {
-                            zmsg_addstr(callback_msg, CALLBACK_CMD_STR);
-                            zmsg_addstr(callback_msg, CALLBACK_CONNECT_STR);
-                            zmsg_addstr(callback_msg, "");   // message_type
-                            zmsg_addstr(callback_msg, name); // peer name
-                            if (self->verbose)
-                            {
-                                zsys_info("To Callback: %s %s %s %s", CALLBACK_CMD_STR, CALLBACK_CONNECT_STR, "", name);
-                            }
-                            zmsg_send(&callback_msg, self->callback_driver);
-                        }
+                        if (self->all_on_connect_cb)
+                            peer_invoke_callback(self, name, CALLBACK_CONNECT_ALL_STR);
+                        peer_invoke_callback(self, name, CALLBACK_CONNECT_STR);
                     }
                     else
                     {
@@ -634,27 +743,14 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                     {
                         zhash_delete(self->available_peers, name);
                         zhash_delete(self->available_uuids, uuid);
+                        zhash_delete(self->peer_retries, name);
                         if (self->verbose)
                         {
                             zsys_info("Peer name %s [%s] leaving.", name, uuid);
                         }
-                        zmsg_t *callback_msg = zmsg_new();
-                        if (!callback_msg)
-                        {
-                            zsys_error("Could not allocate memory to request callback execution.");
-                        }
-                        else
-                        {
-                            zmsg_addstr(callback_msg, CALLBACK_CMD_STR);
-                            zmsg_addstr(callback_msg, CALLBACK_DISCONNECT_STR);
-                            zmsg_addstr(callback_msg, "");   // message_type
-                            zmsg_addstr(callback_msg, name); // peer nam
-                            if (self->verbose)
-                            {
-                                zsys_info("To Callback: %s %s %s %s", CALLBACK_CMD_STR, CALLBACK_DISCONNECT_STR, "", name);
-                            }
-                            zmsg_send(&callback_msg, self->callback_driver);
-                        }
+                        if (self->all_on_disconnect_cb)
+                            peer_invoke_callback(self, name, CALLBACK_DISCONNECT_ALL_STR);
+                        peer_invoke_callback(self, name, CALLBACK_DISCONNECT_STR);
                     }
                     else
                     {
@@ -663,6 +759,55 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                             zsys_info("Conflicted peer %s[%s] leaving!", name, uuid);
                         }
                     }
+                }
+            }
+
+            else if (streq(event, "EVASIVE")) // this is a hang
+            {
+                bool in_our_group = zhash_exists(self->available_uuids, uuid);
+                if (self->verbose && in_our_group)
+                {
+                    zsys_info("%s[%s] is being evasive.", name, uuid);
+                }
+                if (in_our_group)
+                {
+                    int *retry_count = zhash_lookup(self->peer_retries, name);
+                    if (retry_count)
+                    {
+                        int val = *retry_count;
+                        if (val > 0)
+                        {
+                            val--;
+                            *retry_count = val;
+                        }
+                        else if (val == 0) // request peer be booted
+                        {
+                            zhash_delete(self->available_peers, name);
+                            zhash_delete(self->peer_retries, name);
+                            zhash_delete(self->available_uuids, uuid);
+                            peer_whisper_internal(self, uuid, INTERNAL_MESSAGE_STR, PEER_EXIT_COMMAND, NULL, 0);
+                            zsys_error("%s> Sending EXIT request to %s, evasive retry 0.", self->name, name);
+                        }
+                    }
+                    peer_invoke_callback(self, name, CALLBACK_EVASIVE_STR);
+                }
+            }
+
+            else if (streq(event, "SILENT")) // this is a crash
+            {
+                bool in_our_group = zhash_exists(self->available_uuids, uuid);
+                if (self->verbose && in_our_group)
+                {
+                    zsys_info("%s[%s] is being silent.", name, uuid);
+                }
+                if (in_our_group)
+                {
+                    zsys_error("%s> Sending EXIT request to %s, peer silent.", self->name, name);
+                    peer_whisper_internal(self, uuid, INTERNAL_MESSAGE_STR, PEER_EXIT_COMMAND, NULL, 0);
+                    zhash_delete(self->available_peers, name);
+                    zhash_delete(self->available_uuids, uuid);
+                    zhash_delete(self->peer_retries, name);
+                    peer_invoke_callback(self, name, CALLBACK_EVASIVE_STR);
                 }
             }
 
@@ -683,24 +828,7 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                 }
                 else
                 {
-                    zmsg_t *callback_msg = zmsg_new();
-                    if (!callback_msg)
-                    {
-                        zsys_error("Could not allocate memory to request callback execution.");
-                    }
-                    else
-                    {
-                        zmsg_addstr(callback_msg, CALLBACK_CMD_STR);
-                        zmsg_addstr(callback_msg, CALLBACK_MESSAGE_STR);
-                        zmsg_addstr(callback_msg, message_type); // message_type
-                        zmsg_addstr(callback_msg, name);         // peer name
-                        zmsg_append(callback_msg, &data);
-                        if (self->verbose)
-                        {
-                            zsys_info("To Callback: %s %s %s %s", CALLBACK_CMD_STR, CALLBACK_CONNECT_STR, "", name);
-                        }
-                        zmsg_send(&callback_msg, self->callback_driver);
-                    }
+                    peer_invoke_message_callback(self, name, message_type, data);
                 }
             }
 
@@ -722,9 +850,19 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
         zsys_error("Callback driver exit error: %s (%d)", peer_strerror(-st), st);
     }
     zactor_destroy(&(self->callback_driver)); // destroy the callback driver
-    zyre_stop(self->node);
+    if (!zsys_interrupted) // we probably have already left
+        zyre_stop(node);
     zclock_sleep(100);
     zsock_signal(pipe, PEER_SUCCESS);
+    self->exited = true;
+    if (exit_on_request)
+    {
+        zsys_info(" ");
+        zsys_info(" ");
+        zsys_info("%s> Exiting on request.", self->name);
+        zsys_info(" ");
+        zsys_info(" ");
+    }
     return;
 errored_destroy:
     zactor_destroy(&self->callback_driver);
@@ -737,6 +875,22 @@ errored:
 }
 
 // ------------------ CLASS FUNCTIONS -------------------- //
+
+bool peer_exists(peer_t *self, const char *name)
+{
+    assert(self);
+    assert(self->node);
+    assert(name);
+    if (!self->started)
+        return false;
+    if (!validate_name(name))
+    {
+        return false;
+    }
+    char *_name = strdup(name);
+    str_to_upper(_name);
+    return zhash_exists(self->available_peers, _name);
+}
 
 peer_t *peer_new(const char *name, const char *group, bool encryption)
 {
@@ -771,10 +925,10 @@ peer_t *peer_new(const char *name, const char *group, bool encryption)
         _group = strdup("UNIVERSAL");
     }
     assert(_group);
-    str_to_lower(_group);
+    str_to_upper(_group);
     _name = strdup(name);
     assert(_name);
-    str_to_lower(_name);
+    str_to_upper(_name);
     // 2a. Create the hash
     group_hash = peer_md5sum_md5String(_group);
     if (!group_hash)
@@ -823,6 +977,9 @@ peer_t *peer_new(const char *name, const char *group, bool encryption)
         peer_errno = -PEER_SELF_INSERTION_FAILED;
         goto cleanup_all;
     }
+    self->peer_retries = zhash_new();
+    assert(self->peer_retries);
+    self->retry_count = -1;
     self->on_connect_cbs = zhash_new();
     assert(self->on_connect_cbs);
     self->on_connect_cb_args = zhash_new();
@@ -831,6 +988,14 @@ peer_t *peer_new(const char *name, const char *group, bool encryption)
     assert(self->on_exit_cbs);
     self->on_exit_cb_args = zhash_new();
     assert(self->on_exit_cb_args);
+    self->on_evasive_cbs = zhash_new();
+    assert(self->on_evasive_cbs);
+    self->on_evasive_cb_args = zhash_new();
+    assert(self->on_evasive_cb_args);
+    self->on_silent_cbs = zhash_new();
+    assert(self->on_silent_cbs);
+    self->on_silent_cb_args = zhash_new();
+    assert(self->on_silent_cb_args);
     self->on_message_cbs = zhash_new();
     assert(self->on_message_cbs);
     self->on_message_cb_args = zhash_new();
@@ -858,12 +1023,17 @@ void peer_destroy(peer_t **self_p)
     zyre_destroy(&(self->node));
     zhash_destroy(&(self->available_peers));
     zhash_destroy(&(self->available_uuids));
+    zhash_destroy(&(self->peer_retries));
     zhash_destroy(&(self->on_connect_cbs));
     zhash_destroy(&(self->on_connect_cb_args));
     zhash_destroy(&(self->on_exit_cbs));
     zhash_destroy(&(self->on_exit_cb_args));
     zhash_destroy(&(self->on_message_cbs));
     zhash_destroy(&(self->on_message_cb_args));
+    zhash_destroy(&(self->on_evasive_cbs));
+    zhash_destroy(&(self->on_evasive_cb_args));
+    zhash_destroy(&(self->on_silent_cbs));
+    zhash_destroy(&(self->on_silent_cb_args));
     destroy_ptr(self->name);
     destroy_ptr(self->group);
     destroy_ptr(self->group_hash);
@@ -916,20 +1086,6 @@ int peer_set_evasive_timeout(peer_t *self, unsigned int interval_ms)
         return -1;
     }
     zyre_set_evasive_timeout(self->node, interval_ms);
-    peer_errno = PEER_SUCCESS;
-    return 0;
-}
-
-int peer_set_silent_timeout(peer_t *self, unsigned int interval_ms)
-{
-    assert(self);
-    assert(self->node);
-    if (interval_ms > PEER_INTERVAL_MS_MAX) //
-    {
-        peer_errno = -PEER_INTERVAL_TOO_LARGE;
-        return -1;
-    }
-    zyre_set_silent_timeout(self->node, interval_ms);
     peer_errno = PEER_SUCCESS;
     return 0;
 }
@@ -1097,7 +1253,7 @@ int peer_whisper(peer_t *self, const char *name, const char *message_type, void 
         peer_errno = -PEER_STRDUP_FAILED;
         return -1;
     }
-    str_to_lower(msg_type);
+    str_to_upper(msg_type);
 
     if (!data)
     {
@@ -1128,7 +1284,7 @@ int peer_whisper(peer_t *self, const char *name, const char *message_type, void 
     else
     {
         strncpy(last_name, name, PEER_NAME_MAXLEN); // update name
-        strncpy(last_peer_name, uuid, 33);                  // update uuid
+        strncpy(last_peer_name, uuid, 33);          // update uuid
     }
 commence:
     return peer_whisper_internal(self, uuid, EXTERNAL_MESSAGE_STR, message_type, data, data_len);
@@ -1166,7 +1322,7 @@ int peer_whispers(peer_t *self, const char *name, const char *message_type, cons
         peer_errno = -PEER_STRDUP_FAILED;
         return -1;
     }
-    str_to_lower(msg_type);
+    str_to_upper(msg_type);
 
     const char *uuid = NULL;
     if (strncasecmp(last_name, name, PEER_NAME_MAXLEN) == 0) // check name against last name
@@ -1186,7 +1342,7 @@ int peer_whispers(peer_t *self, const char *name, const char *message_type, cons
     else
     {
         strncpy(last_name, name, PEER_NAME_MAXLEN); // update name
-        strncpy(last_peer_name, uuid, 33);                  // update uuid
+        strncpy(last_peer_name, uuid, 33);          // update uuid
     }
 commence:
     va_start(argptr, format);
@@ -1232,7 +1388,7 @@ int peer_shout(peer_t *self, const char *message_type, void *data, size_t data_l
         peer_errno = -PEER_STRDUP_FAILED;
         return -1;
     }
-    str_to_lower(msg_type);
+    str_to_upper(msg_type);
 
     zmsg_t *msg = zmsg_new();
     if (!msg)
@@ -1298,7 +1454,7 @@ int peer_shouts(peer_t *self, const char *message_type, const char *format, ...)
         peer_errno = -PEER_STRDUP_FAILED;
         return -1;
     }
-    str_to_lower(msg_type);
+    str_to_upper(msg_type);
 
     zmsg_t *msg = zmsg_new();
     if (!msg)
@@ -1379,7 +1535,7 @@ char *peer_get_remote_address(peer_t *self, const char *name)
     else
     {
         strncpy(last_name, name, PEER_NAME_MAXLEN); // update name
-        strncpy(last_peer_name, uuid, 33);                  // update uuid
+        strncpy(last_peer_name, uuid, 33);          // update uuid
     }
 commence:
     ret = zyre_peer_address(self->node, uuid);
@@ -1420,7 +1576,7 @@ char *peer_get_remote_header_value(peer_t *self, const char *name)
     }
     else
     {
-        str_to_lower(_name);
+        str_to_upper(_name);
     }
 
     if (strncasecmp(last_name, name, PEER_NAME_MAXLEN) == 0) // check name against last name
@@ -1440,7 +1596,7 @@ char *peer_get_remote_header_value(peer_t *self, const char *name)
     else
     {
         strncpy(last_name, name, PEER_NAME_MAXLEN); // update name
-        strncpy(last_peer_name, uuid, 33);                  // update uuid
+        strncpy(last_peer_name, uuid, 33);          // update uuid
     }
 commence:
     ret = zyre_peer_header_value(self->node, uuid, _name);
@@ -1487,6 +1643,18 @@ zyre_t *peer_get_backend(peer_t *self)
     return self->node;
 }
 
+void peer_set_evasive_retry_count(peer_t *self, int retry_count)
+{
+    if (retry_count == 0)
+    {
+        retry_count = -1;
+    }
+    if (!self->started)
+    {
+        self->retry_count = retry_count;
+    }
+}
+
 int peer_start(peer_t *self)
 {
     assert(self);
@@ -1498,6 +1666,7 @@ int peer_start(peer_t *self)
         peer_errno = -PEER_RECEIVER_FAILED;
         goto errored;
     }
+    self->started = true;
     if (zsock_wait(self->receiver))
     {
         peer_errno = -PEER_RECEIVER_FAILED;
@@ -1529,8 +1698,11 @@ void peer_stop(peer_t *self)
     assert(self);
     assert(self->node);
 
-    zsock_send(self->receiver, "s", "$TERM");
-    zsock_wait(self->receiver);
+    if (!self->exited)
+    {
+        zsock_send(self->receiver, "s", "$TERM");
+        zsock_wait(self->receiver);
+    }
     zactor_destroy(&self->receiver);
 }
 
@@ -1563,7 +1735,7 @@ int peer_on_message(peer_t *self, const char *name, const char *message_type, pe
         peer_errno = -PEER_STRDUP_FAILED;
         return -1;
     }
-    str_to_lower(_name);
+    str_to_upper(_name);
 
     char *_msg_type = strdup(message_type);
     if (!_msg_type)
@@ -1571,7 +1743,7 @@ int peer_on_message(peer_t *self, const char *name, const char *message_type, pe
         peer_errno = -PEER_STRDUP_FAILED;
         goto cleanup_name;
     }
-    str_to_lower(_msg_type);
+    str_to_upper(_msg_type);
     int len = snprintf(hash_name, sizeof(hash_name), "%s.%s", _msg_type, _name);
     if (len != strlen(_msg_type) + strlen(_name) + 1)
     {
@@ -1630,7 +1802,7 @@ int peer_disable_on_message(peer_t *self, const char *name, const char *message_
         peer_errno = -PEER_STRDUP_FAILED;
         return -1;
     }
-    str_to_lower(_name);
+    str_to_upper(_name);
 
     char *_msg_type = strdup(message_type);
     if (!_msg_type)
@@ -1638,7 +1810,7 @@ int peer_disable_on_message(peer_t *self, const char *name, const char *message_
         peer_errno = -PEER_STRDUP_FAILED;
         goto cleanup_name;
     }
-    str_to_lower(_msg_type);
+    str_to_upper(_msg_type);
 
     int len = snprintf(hash_name, sizeof(hash_name), "%s.%s", _msg_type, _name);
     if (len != strlen(_msg_type) + strlen(_name) + 1) // should this be an assert?
@@ -1689,11 +1861,15 @@ int peer_on_connect(peer_t *self, const char *peer, peer_callback_t _Nullable ca
             peer_errno = -PEER_STRDUP_FAILED;
             return -1;
         }
-        str_to_lower(_name);
+        str_to_upper(_name);
     }
     else
     {
-        _name = self->name;
+        self->all_on_connect_cb = callback;
+        self->all_on_connect_cb_args = local_args;
+        peer_errno = PEER_SUCCESS;
+        rc = 0;
+        goto cleanup_name;
     }
     assert(_name);
 
@@ -1745,11 +1921,15 @@ int peer_disable_on_connect(peer_t *self, const char *peer)
             peer_errno = -PEER_STRDUP_FAILED;
             return -1;
         }
-        str_to_lower(_name);
+        str_to_upper(_name);
     }
     else
     {
-        _name = self->name;
+        self->all_on_connect_cb = NULL;
+        self->all_on_connect_cb_args = NULL;
+        peer_errno = PEER_SUCCESS;
+        rc = 0;
+        goto cleanup_name;
     }
     assert(_name);
 
@@ -1794,11 +1974,15 @@ int peer_on_disconnect(peer_t *self, const char *peer, peer_callback_t _Nullable
             peer_errno = -PEER_STRDUP_FAILED;
             return -1;
         }
-        str_to_lower(_name);
+        str_to_upper(_name);
     }
     else
     {
-        _name = self->name;
+        self->all_on_disconnect_cb = callback;
+        self->all_on_disconnect_cb_args = local_args;
+        peer_errno = PEER_SUCCESS;
+        rc = 0;
+        goto cleanup_name;
     }
     assert(_name);
 
@@ -1850,11 +2034,15 @@ int peer_disable_on_disconnect(peer_t *self, const char *peer)
             peer_errno = -PEER_STRDUP_FAILED;
             return -1;
         }
-        str_to_lower(_name);
+        str_to_upper(_name);
     }
     else
     {
-        _name = self->name;
+        self->all_on_disconnect_cb = NULL;
+        self->all_on_disconnect_cb_args = NULL;
+        peer_errno = PEER_SUCCESS;
+        rc = 0;
+        goto cleanup_name;
     }
     assert(_name);
 
@@ -1862,6 +2050,216 @@ int peer_disable_on_disconnect(peer_t *self, const char *peer)
     {
         zhash_delete(self->on_exit_cbs, _name);
         zhash_delete(self->on_exit_cb_args, _name);
+        peer_errno = PEER_SUCCESS;
+        rc = 0;
+    }
+    else
+    {
+        peer_errno = -PEER_CALLBACK_DOES_NOT_EXIST;
+        rc = -1;
+    }
+cleanup_name:
+    destroy_ptr(_name);
+    return rc;
+}
+
+int peer_on_evasive(peer_t *self, const char *peer, peer_callback_t callback, void *local_args)
+{
+    int rc = -1;
+
+    assert(self);
+    assert(self->node);
+    assert(self->on_connect_cbs);
+    assert(self->on_connect_cb_args);
+
+    char *_name = NULL;
+
+    if (peer) // non-NULL
+    {
+        if (!validate_name(peer))
+        {
+            return -1;
+        }
+
+        _name = strdup(peer);
+        if (!_name)
+        {
+            peer_errno = -PEER_STRDUP_FAILED;
+            return -1;
+        }
+        str_to_upper(_name);
+    }
+    else
+    {
+        _name = self->name;
+    }
+    assert(_name);
+
+    if (zhash_exists(self->on_evasive_cbs, _name)) // already exists
+    {
+        zhash_delete(self->on_evasive_cbs, _name);
+        zhash_delete(self->on_evasive_cb_args, _name);
+    }
+
+    if ((rc = zhash_insert(self->on_evasive_cbs, _name, callback)))
+    {
+        peer_errno = -PEER_CALLBACK_INSERTION_FAILED;
+        goto cleanup_name;
+    }
+
+    if ((rc = zhash_insert(self->on_evasive_cb_args, _name, local_args)))
+    {
+        peer_errno = -PEER_CALLBACK_LOCALARG_INSERTION_FAILED;
+        zhash_delete(self->on_evasive_cbs, _name);
+        goto cleanup_name;
+    }
+    peer_errno = PEER_SUCCESS;
+cleanup_name:
+    destroy_ptr(_name);
+    return rc;
+}
+
+int peer_disable_on_evasive(peer_t *self, const char *peer)
+{
+    int rc = -1;
+
+    assert(self);
+    assert(self->node);
+    assert(self->on_connect_cbs);
+    assert(self->on_connect_cb_args);
+
+    char *_name = NULL;
+
+    if (peer) // non-NULL
+    {
+        if (!validate_name(peer))
+        {
+            return -1;
+        }
+
+        _name = strdup(peer);
+        if (!_name)
+        {
+            peer_errno = -PEER_STRDUP_FAILED;
+            return -1;
+        }
+        str_to_upper(_name);
+    }
+    else
+    {
+        _name = self->name;
+    }
+    assert(_name);
+
+    if (zhash_exists(self->on_evasive_cbs, _name)) // already exists
+    {
+        zhash_delete(self->on_evasive_cbs, _name);
+        zhash_delete(self->on_evasive_cb_args, _name);
+        peer_errno = PEER_SUCCESS;
+        rc = 0;
+    }
+    else
+    {
+        peer_errno = -PEER_CALLBACK_DOES_NOT_EXIST;
+        rc = -1;
+    }
+cleanup_name:
+    destroy_ptr(_name);
+    return rc;
+}
+
+int peer_on_silent(peer_t *self, const char *peer, peer_callback_t callback, void *local_args)
+{
+    int rc = -1;
+
+    assert(self);
+    assert(self->node);
+    assert(self->on_connect_cbs);
+    assert(self->on_connect_cb_args);
+
+    char *_name = NULL;
+
+    if (peer) // non-NULL
+    {
+        if (!validate_name(peer))
+        {
+            return -1;
+        }
+
+        _name = strdup(peer);
+        if (!_name)
+        {
+            peer_errno = -PEER_STRDUP_FAILED;
+            return -1;
+        }
+        str_to_upper(_name);
+    }
+    else
+    {
+        _name = self->name;
+    }
+    assert(_name);
+
+    if (zhash_exists(self->on_silent_cbs, _name)) // already exists
+    {
+        zhash_delete(self->on_silent_cbs, _name);
+        zhash_delete(self->on_silent_cb_args, _name);
+    }
+
+    if ((rc = zhash_insert(self->on_silent_cbs, _name, callback)))
+    {
+        peer_errno = -PEER_CALLBACK_INSERTION_FAILED;
+        goto cleanup_name;
+    }
+
+    if ((rc = zhash_insert(self->on_silent_cb_args, _name, local_args)))
+    {
+        peer_errno = -PEER_CALLBACK_LOCALARG_INSERTION_FAILED;
+        zhash_delete(self->on_silent_cbs, _name);
+        goto cleanup_name;
+    }
+    peer_errno = PEER_SUCCESS;
+cleanup_name:
+    destroy_ptr(_name);
+    return rc;
+}
+
+int peer_disable_on_silent(peer_t *self, const char *peer)
+{
+    int rc = -1;
+
+    assert(self);
+    assert(self->node);
+    assert(self->on_connect_cbs);
+    assert(self->on_connect_cb_args);
+
+    char *_name = NULL;
+
+    if (peer) // non-NULL
+    {
+        if (!validate_name(peer))
+        {
+            return -1;
+        }
+
+        _name = strdup(peer);
+        if (!_name)
+        {
+            peer_errno = -PEER_STRDUP_FAILED;
+            return -1;
+        }
+        str_to_upper(_name);
+    }
+    else
+    {
+        _name = self->name;
+    }
+    assert(_name);
+
+    if (zhash_exists(self->on_silent_cbs, _name)) // already exists
+    {
+        zhash_delete(self->on_silent_cbs, _name);
+        zhash_delete(self->on_silent_cb_args, _name);
         peer_errno = PEER_SUCCESS;
         rc = 0;
     }
@@ -1891,10 +2289,16 @@ static void __peernet_on_message_demo(peer_t *self, const char *message_type, co
     printf("\n\nIn message callback of %s (type %s): %s says %s\n\n", peer_name(self), message_type, peer, msg);
 }
 
+static void __peernet_on_evasive_demo(peer_t *self, const char *message_type, const char *peer, void *local, void *remote)
+{
+    printf("\n\nIn evasive callback of %s: %s evading\n\n", peer_name(self), peer);
+}
+
 void peer_test(bool verbose)
 {
     peer_t *peer_a = peer_new("peer_a", NULL, true);
     peer_t *peer_b = peer_new("peer_b", NULL, true);
+    peer_set_evasive_retry_count(peer_a, 2);
     assert(peer_a);
     assert(peer_b);
     if (verbose)
@@ -1908,6 +2312,7 @@ void peer_test(bool verbose)
     }
     assert(!peer_on_disconnect(peer_b, peer_name(peer_a), &__peernet_on_exit_demo, NULL));
     assert(!peer_on_message(peer_a, peer_name(peer_b), "CHAT", &__peernet_on_message_demo, NULL));
+    assert(!peer_on_evasive(peer_a, peer_name(peer_b), &__peernet_on_evasive_demo, NULL));
     assert(!peer_start(peer_a));
     printf("Peer A started\n");
     zclock_sleep(100);
@@ -1915,9 +2320,9 @@ void peer_test(bool verbose)
     printf("Peer B started\n");
     zclock_sleep(1000);
     assert(!peer_whispers(peer_b, peer_name(peer_a), "CHAT", "Hello, %s! I am %s, nice to meet you!", peer_name(peer_a), peer_name(peer_b)));
-    zclock_sleep(2000);
-    peer_destroy(&peer_a);
     zclock_sleep(1000);
+    peer_destroy(&peer_a);
+    zclock_sleep(500);
     peer_destroy(&peer_b);
 }
 // ------------------ END CLASS FUNCTIONS -------------------- //

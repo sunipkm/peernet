@@ -1,0 +1,23 @@
+add_executable(
+    chat
+    "${SOURCE_DIR}/examples/chat/chat.c"
+)
+
+if (TARGET peer)
+    set(peer_target peer)
+else ()
+    set(peer_target peer-static)
+endif ()
+
+target_link_libraries(
+    chat
+    ${peer_target}
+    ${ZYRE_LIBRARIES}
+    ${LIBZMQ_LIBRARIES}
+    ${CZMQ_LIBRARIES}
+    ${OPTIONAL_LIBRARIES}
+)
+set_target_properties(
+    chat
+    PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${SOURCE_DIR}/examples/chat"
+)
