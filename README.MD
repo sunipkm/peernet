@@ -9,6 +9,10 @@ unique names. This allows for message parsing based on which peer it came from,
 unlike Zyre which concerns more with UUIDs which are generated for peers randomly
 at start.
 
+## Ownership and License
+PeerNet is developed by Sunip K. Mukherjee. This project uses the MPL v2 license, see LICENSE.
+Contributions/ideas are welcome.
+
 ## Pre-requisites
 This version of PeerNet uses mostly Zyre stable API, with the exception of the
 `zyre_set_zcert` draft method from Zyre version 2.0.1. PeerNet will continue to be
