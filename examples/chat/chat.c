@@ -29,12 +29,13 @@ void add_on_connect_cb(peer_t *self, const char *message_type, const char *remot
 
 int main(int argc, char *argv[])
 {
-    if (argc != 2) {
-        puts ("syntax: ./chat myname");
+    if ((argc < 2) || (argc > 3)) {
+        puts ("syntax: ./chat myname [verbose]");
         exit (0);
     }
     peer_t *peer = peer_new(argv[1], "chat_mongers", true); // create peer
-    // peer_set_verbose(peer);
+    if (argc == 3)
+        peer_set_verbose(peer);
     assert(peer);
     assert(!peer_on_connect(peer, NULL, &add_on_connect_cb, NULL));
     assert(!peer_start(peer)); // start operations
