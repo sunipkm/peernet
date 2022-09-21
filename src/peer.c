@@ -1,8 +1,8 @@
 /**
  * @file peernet.c
  * @author Sunip K. Mukherjee (sunipkmukherjee@gmail.com)
- * @brief
- * @version 0.1
+ * @brief Implementations file for PeerNet API.
+ * @version See library version
  * @date 2022-09-18
  *
  * @copyright Copyright (c) 2022

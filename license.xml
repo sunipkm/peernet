@@ -1,11 +1,10 @@
-<starting_year>2022</starting_year>
 <license>
-LICENSE FOR THIS PROJECT IS NOT DEFINED!
+Copyright (c) Sunip K. Mukherjee.
 
-Copyright (C) 2022- by peer Developers &lt;zeromq-dev@lists.zeromq.org&gt;
+This file is part of PeerNet, an open-source framework for proximity-based
+peer-to-peer applications -- See https://github.com/sunipkm/peernet.
 
-Please edit license.xml and populate the 'license' tag with proper
-copyright and legalese contents, and regenerate the zproject.
-
-LICENSE FOR THIS PROJECT IS NOT DEFINED!
+This Source Code Form is subject to the terms of the Mozilla Public
+License, v. 2.0. If a copy of the MPL was not distributed with this
+file, You can obtain one at http://mozilla.org/MPL/2.0/.
 </license>

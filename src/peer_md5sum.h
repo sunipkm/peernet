@@ -1,8 +1,8 @@
 /**
  * @file peer_md5sum_md5sum.h
  * @author Sunip K. Mukherjee (sunipkmukherjee@gmail.com)
- * @brief 
- * @version 0.1
+ * @brief MD5 Checksum library
+ * @version See library version
  * @date 2022-09-20
  * 
  * @copyright Copyright (c) 2022
