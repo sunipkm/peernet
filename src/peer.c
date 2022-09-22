@@ -82,7 +82,15 @@ static const char *peernet_error_str[PEER_MAX_ERROR] = {
     "Peer callback does not exist",                         // 43
     "Peer string concatenation failed",                     // 44
     "Peer receiver initialization failed",                  // 45
-    "Peer booted because of inactivity"                     // 46
+    "Peer booted because of inactivity",                    // 46
+    "Peer authentication request timed out",                // 47
+    "Peer authentication data could not be sent",           // 48
+    "Peer authentication data empty",                       // 49
+    "Peer authentication data frame invalid",               // 50
+    "Peer authentication data size invalid",                // 51
+    "Peer authentication key invalid",                      // 52
+    "Peer authentication failed",                           // 53
+    "Peer zpoller timed out"                                // 54
 };
 
 #ifdef __WINDOWS__
@@ -102,24 +110,30 @@ struct _peer_t
     bool started;
     bool exited;
     bool verbose;
-    int retry_count; // max number of retries per peer
-    peer_callback_t all_on_connect_cb;
-    void *all_on_connect_cb_args;
-    peer_callback_t all_on_disconnect_cb;
-    void *all_on_disconnect_cb_args;
-    zhash_t *available_peers;    // zhash of peers, keyed by name
-    zhash_t *available_uuids;    // zhash of peers, keyed by uuid
-    zhash_t *peer_retries;       // zhash of retries, keyed by name
-    zhash_t *on_connect_cbs;     // zhash of callback fcns, keyed by name
-    zhash_t *on_connect_cb_args; // zhash of callback fcn args, keyed by name
-    zhash_t *on_exit_cbs;        // zhash of callback fcns, keyed by name
-    zhash_t *on_exit_cb_args;    // zhash of callback fcn args, keyed by name
-    zhash_t *on_silent_cbs;      // zhash of callback fcns, keyed by name
-    zhash_t *on_silent_cb_args;  // zhash of callback fcn args, keyed by name
-    zhash_t *on_evasive_cbs;     // zhash of callback fcns, keyed by name
-    zhash_t *on_evasive_cb_args; // zhash of callback fcn args, keyed by name
-    zhash_t *on_message_cbs;     // callback functions keyed by message type
-    zhash_t *on_message_cb_args; // callback function args keyed by message type
+    bool evict_on_silent;                 // evict connected peers if they are silent, false by default
+    int retry_count;                      // max number of retries per peer
+    int64_t auth_wait_time;               // max time to wait before authentication is hopeless (ms)
+    int evasive_timeout;                  // evasive timeout in ms
+    uint8_t *auth_password;               // authentication password MD5 hash
+    peer_callback_t all_on_connect_cb;    // common CB for new connections
+    void *all_on_connect_cb_args;         // common CB args for new connections
+    peer_callback_t all_on_disconnect_cb; // common CB for disconnect
+    void *all_on_disconnect_cb_args;      // common CB args for disconnect
+    zlist_t *blacklist_uuids;             // blacklist of UUIDs
+    zhash_t *provisional_peers;           // provisionally accepted peers
+    zhash_t *available_peers;             // zhash of peers, keyed by name
+    zhash_t *available_uuids;             // zhash of peers, keyed by uuid
+    zhash_t *peer_retries;                // zhash of retries, keyed by name
+    zhash_t *on_connect_cbs;              // zhash of callback fcns, keyed by name
+    zhash_t *on_connect_cb_args;          // zhash of callback fcn args, keyed by name
+    zhash_t *on_exit_cbs;                 // zhash of callback fcns, keyed by name
+    zhash_t *on_exit_cb_args;             // zhash of callback fcn args, keyed by name
+    zhash_t *on_silent_cbs;               // zhash of callback fcns, keyed by name
+    zhash_t *on_silent_cb_args;           // zhash of callback fcn args, keyed by name
+    zhash_t *on_evasive_cbs;              // zhash of callback fcns, keyed by name
+    zhash_t *on_evasive_cb_args;          // zhash of callback fcn args, keyed by name
+    zhash_t *on_message_cbs;              // callback functions keyed by message type
+    zhash_t *on_message_cb_args;          // callback function args keyed by message type
 };
 
 // ------------------ HELPER FUNCTIONS -------------------- //
@@ -302,6 +316,32 @@ static inline int validate_message_type(const char *message_type)
     return 1;
 }
 
+static inline int validate_password(const char *password)
+{
+    if (!password)
+    {
+        peer_errno = -PEER_PASSWORD_IS_NULL;
+        return 0;
+    }
+    if (strlen(password) > PEER_PASSWORD_MAXLEN)
+    {
+        peer_errno = -PEER_PASSWORD_LENGTH_INVALID;
+        return 0;
+    }
+    if (strlen(password) < PEER_PASSWORD_MINLEN)
+    {
+        peer_errno = -PEER_PASSWORD_LENGTH_INVALID;
+        return 0;
+    }
+    if (!valid_name_str(password))
+    {
+        peer_errno = -PEER_PASSWORD_INVALID_CHARS;
+        return 0;
+    }
+    peer_errno = PEER_SUCCESS;
+    return 1;
+}
+
 static inline void peer_invoke_callback(peer_t *self, const char *name, const char *callback_type)
 {
     zmsg_t *callback_msg = zmsg_new();
@@ -343,6 +383,28 @@ static inline void peer_invoke_message_callback(peer_t *self, const char *name, 
         }
         zmsg_send(&callback_msg, self->callback_driver);
     }
+}
+
+/**
+ * @brief Compare two MD5 hash values
+ *
+ * @param p1 Pointer to uint8_t[16] hash
+ * @param p2 Pointer to uint8_t[16] hash
+ * @return bool
+ */
+static inline bool auth_hash_compare(void *p1, void *p2)
+{
+    bool out = true;
+    uint8_t *s1 = (uint8_t *)p1;
+    uint8_t *s2 = (uint8_t *)p2;
+    for (int i = 0; (i < 16) && out; i++)
+    {
+        if (s1[i] != s2[i])
+        {
+            out = false;
+        }
+    }
+    return out;
 }
 
 // ---------------- END HELPER FUNCTIONS -------------------- //
@@ -596,7 +658,8 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
     int local_errno = PEER_SUCCESS;
     zyre_t *node = self->node;
     int rc = 0;
-    bool exit_on_request = false;
+    bool exited_on_request = false;
+    bool attempted_auth = false;
     self->callback_driver = zactor_new(callback_actor, self);
     if (!self->callback_driver)
     {
@@ -630,10 +693,47 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
     assert(!zsock_signal(pipe, PEER_SUCCESS)); // clear zactor_new
     assert(!zsock_signal(pipe, PEER_SUCCESS)); // let caller know of status
     bool terminated = false;
+    int timeout = self->auth_wait_time - 1000;
+    int64_t tstamp = 0;
     while (!terminated)
     {
-        void *which = zpoller_wait(poller, -1);
-        if (which == pipe) // do not really expect too many pipe messages
+        if ((timeout != -1) && (!attempted_auth) && (self->started))
+        {
+            timeout = -1;
+        }
+        void *which = zpoller_wait(poller, timeout);
+
+        if ((which == NULL) && (zpoller_expired(poller))) // we don't care about SIGINT, peer creator does.
+        {
+            zsys_info("%s> Poller timed out", self->name);
+            // check if authentication time period has expired
+            if (attempted_auth)
+            {
+                int64_t tnow = zclock_mono();
+                if (tnow < tstamp)
+                {
+                    // what the fuck? exit now
+                    assert(false);
+                }
+                else if (tnow - tstamp > self->auth_wait_time)
+                {
+                    zsock_send(pipe, "i", -PEER_AUTH_REQUEST_TIMEDOOUT);
+                    break;
+                }
+                else
+                {
+                    continue;
+                }
+            }
+            else if (!self->started)
+            {
+                zsys_info("%s> Heard nothing, probably only one here. Can take ownership of group %s.", self->name, self->group);
+                zsock_send(pipe, "i", PEER_SUCCESS);
+                timeout = -1;
+            }
+        }
+
+        else if (which == pipe) // do not really expect too many pipe messages
         {
             zmsg_t *msg = zmsg_recv(which);
             if (!msg)
@@ -650,6 +750,7 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
             free(command);
             zmsg_destroy(&msg);
         }
+
         else if (which == zyre_socket(node))
         {
             zmsg_t *msg = zmsg_recv(which);
@@ -667,22 +768,122 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
 
             if (streq(event, "WHISPER") && streq(internal_msg, INTERNAL_MESSAGE_STR) && streq(group, self->group_hash)) // check internal messages
             {
-                if (streq(message_type, "NAME_CONFLICT_EVICT"))
+                if (streq(message_type, "NAME_CONFLICT_EVICT")) // remote
                 {
                     zsock_send(pipe, "i", -PEER_EXISTS);
+                    terminated = true;
+                }
+                else if (streq(message_type, "SEND_AUTH"))
+                {
+                    int rc = peer_whisper_internal(self, uuid, INTERNAL_MESSAGE_STR, "PEER_AUTH_DATA", self->auth_password, 16); // md5 hash
+                    // do something with time at this point
+                    if (rc)
+                    {
+                        zsock_send(pipe, "i", -PEER_AUTH_SEND_FAILED);
+                        terminated = true;
+                    }
+                    else
+                    {
+                        attempted_auth = true;
+                        tstamp = zclock_mono();
+                    }
+                }
+                else if (streq(message_type, "PEER_AUTH_SUCCESS")) // remote
+                {
+                    attempted_auth = false;
+                    timeout = -1;
+                    zsock_send(pipe, "i", PEER_SUCCESS);
+                }
+                else if (streq(message_type, "PEER_AUTH_DATA") && zhash_exists(self->provisional_peers, name))
+                {
+                    bool accept = true;
+                    int local_err = PEER_SUCCESS;
+                    zframe_t *data = zmsg_pop(msg);
+                    if (!data)
+                    {
+                        accept = false;
+                        local_err = -PEER_AUTH_DATA_EMPTY;
+                        zsock_send(pipe, "i", local_err);
+                        if (self->verbose)
+                        {
+                            zsys_error("%s> No auth key from %s", self->name, name);
+                        }
+                    }
+                    else if (!zframe_is(data))
+                    {
+                        accept = false;
+                        local_err = -PEER_AUTH_DATA_FRAME_INVALID;
+                        zsock_send(pipe, "i", local_err);
+                        if (self->verbose)
+                        {
+                            zsys_error("%s> Invalid auth key frame from %s", self->name, name);
+                        }
+                    }
+                    else if (zframe_size(data) != 16)
+                    {
+                        accept = false;
+                        local_err = -PEER_AUTH_DATA_SIZE_INVALID;
+                        zsock_send(pipe, "i", local_err);
+                        if (self->verbose)
+                        {
+                            zsys_error("%s> Invalid auth key size from %s", self->name, name);
+                        }
+                    }
+                    else if (!auth_hash_compare(self->auth_password, zframe_data(data)))
+                    {
+                        accept = false;
+                        local_err = -PEER_AUTH_KEY_INVALID;
+                        zsock_send(pipe, "i", local_err);
+                        if (self->verbose)
+                        {
+                            zsys_error("%s> Invalid auth key from %s", self->name, name);
+                        }
+                    }
+                    if (accept)
+                    {
+                        // send auth
+                        int rc = peer_whisper_internal(self, uuid, INTERNAL_MESSAGE_STR, "PEER_AUTH_SUCCESS", NULL, 0); // automatically counts as name valid
+                        if (rc)
+                        {
+                            // could not send auth, remove peer from our tentative list so that they can reconnect. But how does the remote peer know of this incident?
+                            // if peer has already disconnected this would be fine
+                            zhash_delete(self->provisional_peers, name);
+                        }
+                        else
+                        {
+                            // do stuff for induction
+                            zhash_insert(self->available_peers, name, strdup(uuid));
+                            zhash_insert(self->available_uuids, uuid, strdup(name)); // update inverse list as well
+                            int *retry_count = (int *)malloc(sizeof(int));
+                            assert(retry_count);
+                            *retry_count = self->retry_count;
+                            zhash_insert(self->peer_retries, name, retry_count);
+                            if (self->verbose)
+                            {
+                                zsys_info("%s> Peer %s inducted.", self->name, name);
+                            }
+                            if (self->all_on_connect_cb)
+                                peer_invoke_callback(self, name, CALLBACK_CONNECT_ALL_STR);
+                            peer_invoke_callback(self, name, CALLBACK_CONNECT_STR);
+                        }
+                    }
+                }
+                else if (streq(message_type, "PEER_AUTH_FAILED"))
+                {
+                    zsock_send(pipe, "i", -PEER_AUTH_FAILED);
                     terminated = true;
                 }
                 else if (streq(message_type, PEER_EXIT_COMMAND))
                 {
                     zsys_error("%s> Received EXIT request from %s", self->name, name);
-                    exit_on_request = true;
+                    exited_on_request = true;
                     zsock_send(pipe, "i", -PEER_BOOTED);
                     terminated = true;
                 }
-                else if (streq(message_type, "NAME_OKAY"))
-                {
-                    zsock_send(pipe, "i", PEER_SUCCESS);
-                }
+                // else if (streq(message_type, "NAME_OKAY"))
+                // {
+                //     zsock_send(pipe, "i", PEER_SUCCESS);
+                // }
             }
 
             else if (streq(event, "JOIN")) // a peer has entered
@@ -694,25 +895,29 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                 }
                 if (in_our_group) // in our group
                 {
-                    if (!zhash_insert(self->available_peers, name, strdup(uuid))) // peer name not already in available peers list
+                    if ((!(zlist_exists(self->blacklist_uuids, uuid))) && (!zhash_insert(self->provisional_peers, name, strdup(uuid)))) // peer name not already in available peers list
                     {
-                        zhash_insert(self->available_uuids, uuid, strdup(name)); // update inverse list as well
-                        int *retry_count = (int *)malloc(sizeof(int));
-                        assert(retry_count);
-                        *retry_count = self->retry_count;
-                        zhash_insert(self->peer_retries, name, retry_count);
                         if (self->verbose)
                         {
-                            zsys_info("Peer name OK: %s, sending name induction message to %s!", name, uuid);
+                            zsys_info("Peer name OK: %s, requesting authentication from %s!", name, uuid);
                         }
-                        rc = peer_whisper_internal(self, uuid, INTERNAL_MESSAGE_STR, "NAME_OKAY", NULL, 0);
+                        rc = peer_whisper_internal(self, uuid, INTERNAL_MESSAGE_STR, "SEND_AUTH", NULL, 0);
                         if (rc)
                         {
-                            zsys_error("Peer name OK: %s, could not send message to %s!", name, uuid);
+                            zsys_error("Peer name OK: %s, could not send message to %s, removing!", name, uuid);
+                            zhash_delete(self->provisional_peers, name);
                         }
-                        if (self->all_on_connect_cb)
-                            peer_invoke_callback(self, name, CALLBACK_CONNECT_ALL_STR);
-                        peer_invoke_callback(self, name, CALLBACK_CONNECT_STR);
+                        // if (self->all_on_connect_cb)
+                        //     peer_invoke_callback(self, name, CALLBACK_CONNECT_ALL_STR);
+                        // peer_invoke_callback(self, name, CALLBACK_CONNECT_STR);
+                    }
+                    else if (zlist_exists(self->blacklist_uuids, uuid))
+                    {
+                        zsock_send(pipe, "i", -PEER_BLACKLISTED);
+                        if (self->verbose)
+                        {
+                            zsys_info("%s> Blacklisted peer %s[%s] tried to connect.", self->name, name, uuid);
+                        }
                     }
                     else
                     {
@@ -732,12 +937,13 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
             else if (streq(event, "LEAVE"))
             {
                 bool in_our_group = (strcmp(group, self->group_hash) == 0); // check if peer is in our group by comparing the group name sent by the peer against our group hash
-                if (self->verbose)
-                {
-                    zsys_info("%s[%s] has left [%s]\n", name, uuid, in_our_group == true ? self->group : group);
-                }
+                // if (self->verbose)
+                // {
+                //     zsys_info("%s[%s] has left [%s]\n", name, uuid, in_our_group == true ? self->group : group);
+                // }
                 if (in_our_group) // in our group
                 {
+                    zhash_delete(self->provisional_peers, name);
                     // check if UUID of leaving is in available uuids
                     if (zhash_lookup(self->available_uuids, uuid))
                     {
@@ -787,6 +993,7 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                             zhash_delete(self->available_uuids, uuid);
                             peer_whisper_internal(self, uuid, INTERNAL_MESSAGE_STR, PEER_EXIT_COMMAND, NULL, 0);
                             zsys_error("%s> Sending EXIT request to %s, evasive retry 0.", self->name, name);
+                            zsock_send(pipe, "i", -PEER_BOOTED);
                         }
                     }
                     peer_invoke_callback(self, name, CALLBACK_EVASIVE_STR);
@@ -800,7 +1007,7 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                 {
                     zsys_info("%s[%s] is being silent.", name, uuid);
                 }
-                if (in_our_group)
+                if (in_our_group && self->evict_on_silent)
                 {
                     zsys_error("%s> Sending EXIT request to %s, peer silent.", self->name, name);
                     peer_whisper_internal(self, uuid, INTERNAL_MESSAGE_STR, PEER_EXIT_COMMAND, NULL, 0);
@@ -808,6 +1015,7 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                     zhash_delete(self->available_uuids, uuid);
                     zhash_delete(self->peer_retries, name);
                     peer_invoke_callback(self, name, CALLBACK_EVASIVE_STR);
+                    zsock_send(pipe, "i", -PEER_BOOTED);
                 }
             }
 
@@ -850,12 +1058,12 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
         zsys_error("Callback driver exit error: %s (%d)", peer_strerror(-st), st);
     }
     zactor_destroy(&(self->callback_driver)); // destroy the callback driver
-    if (!zsys_interrupted) // we probably have already left
+    if (!zsys_interrupted)                    // we probably have already left
         zyre_stop(node);
     zclock_sleep(100);
     zsock_signal(pipe, PEER_SUCCESS);
     self->exited = true;
-    if (exit_on_request)
+    if (exited_on_request)
     {
         zsys_info(" ");
         zsys_info(" ");
@@ -892,7 +1100,7 @@ bool peer_exists(peer_t *self, const char *name)
     return zhash_exists(self->available_peers, _name);
 }
 
-peer_t *peer_new(const char *name, const char *group, bool encryption)
+peer_t *peer_new(const char *name, const char *group, const char *password, bool encryption)
 {
     peer_t *self = NULL;
     char *_name = NULL, *_group = NULL, _group_hash[33] = {
@@ -900,13 +1108,15 @@ peer_t *peer_new(const char *name, const char *group, bool encryption)
                                         };
     uint8_t *group_hash = NULL;
     zcert_t *cert = NULL;
-    if (encryption)
-    {
-        cert = zcert_new();
-        assert(cert);
-    }
+    char *_passwd = NULL;
     // 1. Check name
     int rc = validate_name(name);
+    if (!rc)
+    {
+        return NULL;
+    }
+    // 1a. Check password
+    rc = validate_password(password);
     if (!rc)
     {
         return NULL;
@@ -931,6 +1141,8 @@ peer_t *peer_new(const char *name, const char *group, bool encryption)
     str_to_upper(_name);
     // 2a. Create the hash
     group_hash = peer_md5sum_md5String(_group);
+    _passwd = strdup(password);
+    assert(_passwd);
     if (!group_hash)
     {
         peer_errno = -PEER_GROUP_HASH_FAILED;
@@ -952,6 +1164,8 @@ peer_t *peer_new(const char *name, const char *group, bool encryption)
     }
     if (encryption)
     {
+        cert = zcert_new();
+        assert(cert);
         zyre_set_zcert(self->node, cert);
         zcert_destroy(&cert);
     }
@@ -960,6 +1174,7 @@ peer_t *peer_new(const char *name, const char *group, bool encryption)
     self->group = _group;
     self->group_hash = strndup(_group_hash, 33);
     self->exited = false;
+    self->auth_password = peer_md5sum_md5String(_passwd);
     destroy_ptr(_name);
     destroy_ptr(group_hash);
 
@@ -977,6 +1192,11 @@ peer_t *peer_new(const char *name, const char *group, bool encryption)
         peer_errno = -PEER_SELF_INSERTION_FAILED;
         goto cleanup_all;
     }
+    self->auth_wait_time = PEER_AUTH_TIMEOUT;
+    self->blacklist_uuids = zlist_new();
+    assert(self->blacklist_uuids);
+    self->provisional_peers = zhash_new();
+    assert(self->provisional_peers);
     self->peer_retries = zhash_new();
     assert(self->peer_retries);
     self->retry_count = -1;
@@ -1005,6 +1225,7 @@ peer_t *peer_new(const char *name, const char *group, bool encryption)
     return self;
 cleanup_all:
     destroy_ptr(self);
+    destroy_ptr(_passwd);
 cleanup_group:
     destroy_ptr(group_hash);
     destroy_ptr(_group);
@@ -1021,6 +1242,8 @@ void peer_destroy(peer_t **self_p)
     peer_t *self = *self_p;
     peer_stop(self);
     zyre_destroy(&(self->node));
+    zlist_destroy(&(self->blacklist_uuids));
+    zhash_destroy(&(self->provisional_peers));
     zhash_destroy(&(self->available_peers));
     zhash_destroy(&(self->available_uuids));
     zhash_destroy(&(self->peer_retries));
@@ -1655,38 +1878,135 @@ void peer_set_evasive_retry_count(peer_t *self, int retry_count)
     }
 }
 
+void peer_set_silent_eviction(peer_t *self, bool eviction)
+{
+    if (self->verbose)
+    {
+        zsys_info("%s> Setting silent eviction from %d to %d.", self->evict_on_silent, eviction);
+    }
+    self->evict_on_silent = eviction;
+}
+
+bool peer_silent_eviction_enabled(peer_t *self)
+{
+    return self->evict_on_silent;
+}
+
+int peer_get_receiver_messages(peer_t *self, int timeout_ms)
+{
+    zpoller_t *poller = NULL;
+    int rc = -1;
+    poller = zpoller_new(self->receiver, NULL);
+    if (!poller)
+    {
+        peer_errno = -PEER_COULD_NOT_CREATE_ZPOLLER;
+        return -1;
+    }
+    void *which = zpoller_wait(poller, timeout_ms);
+    if (which == self->receiver)
+    {
+        int status = -PEER_MAX_ERROR;
+        rc = zsock_recv(which, "i", &status);
+        if (rc)
+        {
+            zsys_error("%s> Did not receive any status message, what's going on?", self->name);
+            assert(false);
+        }
+        rc = status;
+    }
+    else if (which == NULL)
+    {
+        if (zpoller_expired(poller))
+        {
+            zsys_error("%s> Authentication poller expired.");
+            rc = -1;
+            peer_errno = -PEER_ZPOLLER_TIMED_OUT;
+        }
+        else if (zpoller_terminated(poller))
+        {
+            zsys_error("%s> Authentication poller was killed! Error!", self->name);
+            assert(false);
+        }
+    }
+    zpoller_destroy(&poller);
+    return rc;
+}
+
 int peer_start(peer_t *self)
 {
     assert(self);
     assert(self->node);
     int rc = 0;
+    zpoller_t *poller = NULL;
     self->receiver = zactor_new(receiver_actor, self);
     if (!self->callback_driver)
     {
         peer_errno = -PEER_RECEIVER_FAILED;
         goto errored;
     }
-    self->started = true;
+
     if (zsock_wait(self->receiver))
     {
         peer_errno = -PEER_RECEIVER_FAILED;
         goto errored_destroy;
     }
-    zsock_t *receiver_sock = zactor_sock(self->receiver);
-    zsock_set_rcvtimeo(receiver_sock, 1000); // wait 100 ms
-    int status = -PEER_MAX_ERROR;
-    if (!zsock_recv(receiver_sock, "i", &status))
+    poller = zpoller_new(self->receiver, NULL);
+    assert(poller);
+
+    void *which = zpoller_wait(poller, self->auth_wait_time + 1000);
+    if (which == self->receiver)
     {
+        int status = -PEER_MAX_ERROR;
+        rc = zsock_recv(which, "i", &status);
+        if (rc)
+        {
+            zsys_error("%s> Did not receive any status message, what's going on?", self->name);
+            assert(false);
+        }
         if (status == -PEER_EXISTS)
         {
             zsys_error("Peer name %s already exists, exiting...", self->name);
-            rc = -PEER_EXISTS;
-            goto errored_destroy;
+            rc = -1;
+            peer_errno = -PEER_EXISTS;
+            goto errored_zpoller_destroy;
+        }
+        else if (status == -PEER_AUTH_FAILED)
+        {
+            zsys_error("%s> Authentication rejected!", self->name);
+            rc = -1;
+            peer_errno = -PEER_AUTH_FAILED;
+            goto errored_zpoller_destroy;
+        }
+        else if (status == PEER_SUCCESS)
+        {
+            if (self->verbose)
+            {
+                zsys_info("%s> Successfully authenticated and joined the network.", self->name);
+            }
+            rc = PEER_SUCCESS;
         }
     }
-    zsock_set_rcvtimeo(receiver_sock, -1); // wait infinite
+    else if (which == NULL)
+    {
+        if (zpoller_expired(poller))
+        {
+            zsys_error("%s> Authentication poller expired.");
+            rc = -1;
+            peer_errno = -PEER_AUTH_REQUEST_TIMEDOOUT;
+            goto errored_zpoller_destroy;
+        }
+        else if (zpoller_terminated(poller))
+        {
+            zsys_error("%s> Authentication poller was killed! Error!", self->name);
+            assert(false);
+        }
+    }
+    self->started = true;
     peer_errno = PEER_SUCCESS;
+    zpoller_destroy(&poller);
     return rc;
+errored_zpoller_destroy:
+    zpoller_destroy(&poller);
 errored_destroy:
     zactor_destroy(&self->receiver);
 errored:
@@ -2296,8 +2616,8 @@ static void __peernet_on_evasive_demo(peer_t *self, const char *message_type, co
 
 void peer_test(bool verbose)
 {
-    peer_t *peer_a = peer_new("peer_a", NULL, true);
-    peer_t *peer_b = peer_new("peer_b", NULL, true);
+    peer_t *peer_a = peer_new("peer_a", NULL, "password", true);
+    peer_t *peer_b = peer_new("peer_b", NULL, "password", true);
     peer_set_evasive_retry_count(peer_a, 2);
     assert(peer_a);
     assert(peer_b);

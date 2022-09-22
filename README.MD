@@ -64,7 +64,7 @@ instance to send the message to all other instances.
 
 The example starts operation by initializing the peer, and starting it:
 ```c
-    peer_t *peer = peer_new("peer_name", NULL); // creates a peer named "peer_name" in the default group.
+    peer_t *peer = peer_new("peer_name", NULL, "password", true); // creates a peer named "peer_name" in the default group with password "password" and encryption enabled.
 ```
 At this point, a pre-defined callback function is registered in order to capture any peer that has connected.
 ```c
@@ -114,4 +114,13 @@ A peer can be stopped after getting out of the `while` loop by either calling `p
 ```
 
 All in all, with 36 lines of code, a terminal chat client is implemented.
+
+## Possible Security Concern
+Compared to the first version of the API where any Zyre client could snoop at our secret group name and guessed
+how to join the local network, an extra password authentication layer has been added. However, this layer is only
+marginally more effective as nothing prevents an adversary from snooping the group name (that is probably not
+changing very often), and starting a peer in that group (which will become the first peer connected, hence the
+primary arbiter of the group as it will allow/disallow the next peer to enter the group.) This is definitely going
+to prevent intrusion into an existing network, but does not prevent access after an attempt at a network restart.
+More work is needed in this front, and ideas are very much welcome.
 

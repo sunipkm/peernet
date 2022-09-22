@@ -27,7 +27,7 @@
 #include <zyre.h>
 
 //  PEER version macros for compile-time API detection
-#define PEER_VERSION_MAJOR 1
+#define PEER_VERSION_MAJOR 2
 #define PEER_VERSION_MINOR 0
 #define PEER_VERSION_PATCH 0
 

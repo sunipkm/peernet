@@ -195,6 +195,7 @@ uint8_t* peer_md5sum_md5String(char *input){
 	peer_md5sum_md5Finalize(&ctx);
 
 	uint8_t *result = malloc(16);
+	assert(result);
 	memcpy(result, ctx.digest, 16);
 	return result;
 }

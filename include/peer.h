@@ -52,12 +52,13 @@ typedef void (*peer_callback_t)(peer_t *_Nonnull self, const char *_Nonnull mess
  *
  * Note: Instead of handling SIGINT in your code, use the zsys_interrupted variable.
  *
- * @param name Unique peer name in the group. The name is not case sensitive. Alphanumeric characters and _ are the only allowed characters. Max length can be 15 characters.
- * @param group Name of group the peer belongs to. Set it to NULL to use the default "UNIVERSAL" group. Max allowed length is 15 characters.
+ * @param name Unique peer name in the group. The name is not case sensitive. Alphanumeric characters and _ are the only allowed characters. Length has to be between 4 and 15 characters (inclusive).
+ * @param group Name of group the peer belongs to. Set it to NULL to use the default "UNIVERSAL" group. Length has to be between 4 and 15 characters (inclusive).
+ * @param password Plaintext password, only alphanumeric characters and '_' are allowed. Length has to be between 4 and 50 characters (inclusive). Password IS case sensitive.
  * @param encryption Enable/disable endpoint encryption.
  * @return peer_t * An instance of a peer on success, NULL on failure. peer_errno is set accordingly.
  */
-PEER_EXPORT peer_t *peer_new(const char *_Nonnull name, const char *_Nullable group, bool encryption);
+PEER_EXPORT peer_t *peer_new(const char *_Nonnull name, const char *_Nullable group, const char *_Nonnull password, bool encryption);
 
 /**
  * @brief Close connections and destroy an instance of a peer.
@@ -72,7 +73,7 @@ PEER_EXPORT void peer_destroy(peer_t **_Nonnull self_p);
  *
  * @param self Local instance of peer.
  * @param peer Name of the remote peer.
- * @param message_type Message type string. Not case sensitive. Maximum length 15 characters, only alphanumeric characters and _ are allowed.
+ * @param message_type Message type string. Not case sensitive. Length has to be between 4 and 15 characters (inclusive), only alphanumeric characters and _ are allowed.
  * @param callback Pointer to the function of form {@link peer_callback_t}, can be NULL.
  * @param local_args Pointer to arguments to be sent to the callback function, can be NULL.
  * @return int 0 on success, -1 on error. peer_errno is set accordingly.
@@ -84,7 +85,7 @@ PEER_EXPORT int peer_on_message(peer_t *_Nonnull self, const char *_Nonnull peer
  *
  * @param self Local instance of peer.
  * @param peer Name of the remote peer.
- * @param message_type Message type string. Not case sensitive. Maximum length 15 characters, only alphanumeric characters and _ are allowed.
+ * @param message_type Message type string.
  * @return int 0 on success, -1 on error. peer_error is set accordingly.
  */
 PEER_EXPORT int peer_disable_on_message(peer_t *_Nonnull self, const char *_Nonnull peer, const char *_Nonnull message_type);
@@ -184,6 +185,32 @@ PEER_EXPORT int peer_on_silent(peer_t *_Nonnull self, const char *_Nonnull peer,
  * @return int 0 on success, -1 on error. peer_error is set accordingly.
  */
 PEER_EXPORT int peer_disable_on_silent(peer_t *_Nonnull self, const char *_Nonnull peer);
+
+/**
+ * @brief Disable sending eviction request to remote instance of peer on SILENT.
+ * This feature is disabled by default.
+ *
+ * @param self Local instance of peer.
+ * @param eviction True to evict other peers when they are silent.
+ */
+PEER_EXPORT void peer_set_silent_eviction(peer_t *_Nonnull self, bool eviction);
+
+/**
+ * @brief Get the current peer eviction policy on "SILENT" message from node.
+ *
+ * @param self Local instance of peer.
+ * @return bool True if enabled, false otherwise.
+ */
+PEER_EXPORT bool peer_silent_eviction_enabled(peer_t *_Nonnull self);
+
+/**
+ * @brief Get error/status messages from the underlying peer receiver.
+ *
+ * @param self Local instance of peer.
+ * @param timeout_ms -1 to wait forever.
+ * @return int Status from @{link PEER_ERRORS}.
+ */
+PEER_EXPORT int peer_get_receiver_messages(peer_t *_Nonnull self, int timeout_ms);
 
 /**
  * @brief Check if the peer exists in the network.
@@ -502,6 +529,18 @@ enum PEER_ERRORS
     PEER_STRCONCAT_FAILED = 44,                     /*!< Peer string concatenation failed */
     PEER_RECEIVER_FAILED = 45,                      /*!< Peer receiver initialization failed */
     PEER_BOOTED = 46,                               /*!< Peer booted because of inactivity */
+    PEER_AUTH_REQUEST_TIMEDOOUT = 47,               /*!< Peer authentication request timed out */
+    PEER_AUTH_SEND_FAILED = 48,                     /*!< Peer authentication data could not be sent */
+    PEER_AUTH_DATA_EMPTY = 49,                      /*!< Peer authentication data empty */
+    PEER_AUTH_DATA_FRAME_INVALID = 50,              /*!< Peer authentication data frame invalid */
+    PEER_AUTH_DATA_SIZE_INVALID = 51,               /*!< Peer authentication data size invalid */
+    PEER_AUTH_KEY_INVALID = 52,                     /*!< Peer authentication key invalid */
+    PEER_AUTH_FAILED = 53,                          /*!< Peer authentication failed */
+    PEER_BLACKLISTED = 54,                          /*< Blacklisted peer attempted connection */
+    PEER_PASSWORD_IS_NULL = 55,                     /*<! Peer password is NULL. */
+    PEER_PASSWORD_LENGTH_INVALID = 56,              /*<! Peer password length is invalid. */
+    PEER_PASSWORD_INVALID_CHARS = 57,               /*<! Peer password contains invalid characers. */
+    PEER_ZPOLLER_TIMED_OUT = 58,                    /*<! Peer zpoller timed out */
     PEER_MAX_ERROR
 };
 #ifdef __cplusplus
