@@ -1262,6 +1262,7 @@ void peer_destroy(peer_t **self_p)
     destroy_ptr(self->name);
     destroy_ptr(self->group);
     destroy_ptr(self->group_hash);
+    destroy_ptr(self->auth_password);
     destroy_ptr_p(self_p);
 }
 

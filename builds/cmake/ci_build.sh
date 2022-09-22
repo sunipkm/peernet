@@ -215,8 +215,8 @@ if [ -z "$DO_CLANG_FORMAT_CHECK" -a -f configure.ac ]; then
     $CI_TIME ./autogen.sh
     $CI_TIME ./configure "${CONFIG_OPTS[@]}"
     $CI_TIME make -j5 dist-gzip
-    $CI_TIME tar -xzf peer-2.1.0.tar.gz
-    cd peer-2.1.0
+    $CI_TIME tar -xzf peer-2.1.1.tar.gz
+    cd peer-2.1.1
     fold_end check.clang_format_check
 fi
 

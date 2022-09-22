@@ -537,11 +537,11 @@ enum PEER_ERRORS
     PEER_AUTH_DATA_SIZE_INVALID = 51,               /*!< Peer authentication data size invalid */
     PEER_AUTH_KEY_INVALID = 52,                     /*!< Peer authentication key invalid */
     PEER_AUTH_FAILED = 53,                          /*!< Peer authentication failed */
-    PEER_BLACKLISTED = 54,                          /*< Blacklisted peer attempted connection */
-    PEER_PASSWORD_IS_NULL = 55,                     /*<! Peer password is NULL. */
-    PEER_PASSWORD_LENGTH_INVALID = 56,              /*<! Peer password length is invalid. */
-    PEER_PASSWORD_INVALID_CHARS = 57,               /*<! Peer password contains invalid characers. */
-    PEER_ZPOLLER_TIMED_OUT = 58,                    /*<! Peer zpoller timed out */
+    PEER_BLACKLISTED = 54,                          /*!< Blacklisted peer attempted connection */
+    PEER_PASSWORD_IS_NULL = 55,                     /*!< Peer password is NULL. */
+    PEER_PASSWORD_LENGTH_INVALID = 56,              /*!< Peer password length is invalid. */
+    PEER_PASSWORD_INVALID_CHARS = 57,               /*!< Peer password contains invalid characers. */
+    PEER_ZPOLLER_TIMED_OUT = 58,                    /*!< Peer zpoller timed out */
     PEER_MAX_ERROR
 };
 #ifdef __cplusplus
