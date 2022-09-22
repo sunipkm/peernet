@@ -441,6 +441,7 @@ static void callback_actor(zsock_t *pipe, void *arg)
                 peer_callback_t cb = NULL;
                 void *local_args = NULL;
                 void *remote_args = NULL;
+                size_t remote_args_len = 0;
                 char hash[PEER_MESSAGETYPE_MAXLEN + PEER_NAME_MAXLEN + 1] = {
                     0x0,
                 };
@@ -604,6 +605,7 @@ static void callback_actor(zsock_t *pipe, void *arg)
                     cb = zhash_lookup(self->on_message_cbs, hash);
                     local_args = zhash_lookup(self->on_message_cb_args, hash);
                     remote_args = zframe_data(frame);
+                    remote_args_len = zframe_size(frame);
                 }
                 else
                 {
@@ -620,7 +622,7 @@ static void callback_actor(zsock_t *pipe, void *arg)
                 // zsock_send(pipe, "i", executed++);
                 if (cb)
                 {
-                    cb(self, message_type, remote_name, local_args, remote_args);
+                    cb(self, message_type, remote_name, local_args, remote_args, remote_args_len);
                 }
                 else
                 {
@@ -2593,23 +2595,23 @@ cleanup_name:
     return rc;
 }
 
-static void __peernet_on_connect_demo(peer_t *self, const char *message_type, const char *peer, void *local, void *remote)
+static void __peernet_on_connect_demo(peer_t *self, const char *message_type, const char *peer, void *local, void *remote, size_t len)
 {
     printf("\n\nIn connect callback of %s: %s connected\n\n", peer_name(self), peer);
 }
 
-static void __peernet_on_exit_demo(peer_t *self, const char *message_type, const char *peer, void *local, void *remote)
+static void __peernet_on_exit_demo(peer_t *self, const char *message_type, const char *peer, void *local, void *remote, size_t len)
 {
     printf("\n\nIn disconnect callback of %s: %s disconnected\n\n", peer_name(self), peer);
 }
 
-static void __peernet_on_message_demo(peer_t *self, const char *message_type, const char *peer, void *local, void *remote)
+static void __peernet_on_message_demo(peer_t *self, const char *message_type, const char *peer, void *local, void *remote, size_t len)
 {
     char *msg = (char *)remote;
     printf("\n\nIn message callback of %s (type %s): %s says %s\n\n", peer_name(self), message_type, peer, msg);
 }
 
-static void __peernet_on_evasive_demo(peer_t *self, const char *message_type, const char *peer, void *local, void *remote)
+static void __peernet_on_evasive_demo(peer_t *self, const char *message_type, const char *peer, void *local, void *remote, size_t len)
 {
     printf("\n\nIn evasive callback of %s: %s evading\n\n", peer_name(self), peer);
 }

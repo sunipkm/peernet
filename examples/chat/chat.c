@@ -13,7 +13,7 @@
 
 #define CHAT_MESSAGE_TYPE "CHAT"
 
-static void message_received_cb(peer_t *self, const char *message_type, const char *remote_name, void *data_local, void *data_remote)
+static void message_received_cb(peer_t *self, const char *message_type, const char *remote_name, void *data_local, void *data_remote, size_t data_remote_len)
 {
     if (streq(message_type, CHAT_MESSAGE_TYPE))
         printf("\n%s> %s\n\n", remote_name, (char *)data_remote);
@@ -21,7 +21,7 @@ static void message_received_cb(peer_t *self, const char *message_type, const ch
         printf("\n%s> Invalid message request %s", remote_name, message_type);
 }
 
-void add_on_connect_cb(peer_t *self, const char *message_type, const char *remote_name, void *data_local, void *data_remote)
+void add_on_connect_cb(peer_t *self, const char *message_type, const char *remote_name, void *data_local, void *data_remote, size_t data_remote_len)
 {
     assert(!peer_on_message(self, remote_name, CHAT_MESSAGE_TYPE, &message_received_cb, NULL));
 }

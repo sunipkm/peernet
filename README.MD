@@ -73,7 +73,7 @@ At this point, a pre-defined callback function is registered in order to capture
 
 The `on_connect_callback()` function has the following form:
 ```c
-    void on_connect_callback(peer_t *self, const char *message_type, const char *remote_name, void *local_args, void *remote_args)
+    void on_connect_callback(peer_t *self, const char *message_type, const char *remote_name, void *local_args, void *remote_args, size_t remote_args_len)
     {
         peer_on_message(self, remote_name, "CHAT", &on_message_callback, NULL);
     }
@@ -82,7 +82,7 @@ Essentially, the `on_connect` callback that was registered, registers a callback
 
 The `on_message_callback()` function has the following form:
 ```c
-    void on_connect_callback(peer_t *self, const char *message_type, const char *remote_name, void *local_args, void *remote_args)
+    void on_connect_callback(peer_t *self, const char *message_type, const char *remote_name, void *local_args, void *remote_args, size_t remote_args_len)
     {
         printf("%s> %s\n", remote_name, (char *) remote_args);
     }

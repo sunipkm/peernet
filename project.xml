@@ -4,14 +4,14 @@
     description = "an open-source framework for proximity-based P2P apps"
     script = "zproject.gsl"
     license = "MPL-2.0"
-    email = "zeromq-dev@lists.zeromq.org"
-    url = "https://github.com/zeromq/zyre"
-    repository = "https://github.com/zeromq/zyre"
+    email = "sunipkmukherjee@gmail.com"
+    url = "https://github.com/sunipkm/peernet"
+    repository = "https://github.com/sunipkm/peernet"
     unique_class_name = "0"
     >
     <include filename = "license.xml" />
-    <version major = "2" minor = "0" patch = "0" />
-    <abi current = "2" revision = "0" age = "0" />
+    <version major = "2" minor = "1" patch = "0" />
+    <abi current = "2" revision = "1" age = "0" />
 
     <use project = "czmq" />
     <use project = "zyre" />

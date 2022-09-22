@@ -44,8 +44,9 @@ extern "C"
  * @param remote_name Name of the remote peer the event was received from.
  * @param local_data Local data. This pointer is NOT freed.
  * @param remote_data Remote data. THIS POINTER IS NOT OWNED BY THE CALLBACK FUNCTION. This pointer is freed, hence data needs to be copied into a state machine to maintain persistence. This pointer is NULL for connect or disconnect callbacks.
+ * @param remote_data_len Length of the remote data.
  */
-typedef void (*peer_callback_t)(peer_t *_Nonnull self, const char *_Nonnull message_type, const char *_Nonnull remote_name, void *_Nullable local_data, void *_Nullable remote_data);
+typedef void (*peer_callback_t)(peer_t *_Nonnull self, const char *_Nonnull message_type, const char *_Nonnull remote_name, void *_Nullable local_data, void *_Nullable remote_data, size_t remote_data_len);
 
 /**
  * @brief Create a new pair of name belonging to a group. If group is set to NULL, the default group ('UNIVERSAL') is used.
@@ -137,7 +138,7 @@ PEER_EXPORT int peer_on_disconnect(peer_t *_Nonnull self, const char *_Nullable 
  * @param peer Name of the remote peer, NULL for local peer.
  * @return int 0 on success, -1 on error. peer_error is set accordingly.
  */
-int peer_disable_on_disconnect(peer_t *_Nonnull self, const char *_Nullable peer);
+PEER_EXPORT int peer_disable_on_disconnect(peer_t *_Nonnull self, const char *_Nullable peer);
 
 /**
  * @brief Register a callback function to be executed on if the peer is being
