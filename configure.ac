@@ -13,7 +13,7 @@
 # Process this file with autoconf to produce a configure script.
 AC_PREREQ(2.61)
 #
-AC_INIT([peer],[2.1.1],[sunipkmukherjee@gmail.com])
+AC_INIT([peer],[2.1.2],[sunipkmukherjee@gmail.com])
 
 AC_CONFIG_AUX_DIR(config)
 AC_CONFIG_MACRO_DIR(config)
@@ -37,12 +37,12 @@ AC_SUBST(PACKAGE_VERSION)
 #
 # Libtool -version-info (ABI version)
 #
-# Currently 2:1:0 ("stable"). Don't change this unless you
+# Currently 2:2:0 ("stable"). Don't change this unless you
 # know exactly what you're doing and have read and understand
 # http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
 #
 # libpeer -version-info
-LTVER="2:1:0"
+LTVER="2:2:0"
 AC_SUBST(LTVER)
 
 # building in a subdirectory?

@@ -35,6 +35,20 @@ extern "C"
 #define _Nonnull
 #endif
 
+#ifndef _DOXYGEN_
+#ifdef __WINDOWS__
+extern __declspec(thread) int peer_errno;
+#else
+extern __thread int peer_errno;
+#endif
+#else
+/**
+ * @brief Global errno variable for peernet.
+ * 
+ */
+static int peer_errno;
+#endif // _DOXYGEN_
+
 /**
  * @brief PeerNet callback function that is executed on a valid event after registration
  * using peer_on_*() functions.
