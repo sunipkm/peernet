@@ -3,6 +3,11 @@ add_executable(
     "${SOURCE_DIR}/examples/chat/chat.c"
 )
 
+add_executable(
+    latency.exe
+    "${SOURCE_DIR}/examples/benchmarks/latency.c"
+)
+
 if (TARGET peer)
     set(peer_target peer)
 else ()
@@ -17,9 +22,24 @@ target_link_libraries(
     ${CZMQ_LIBRARIES}
     ${OPTIONAL_LIBRARIES}
 )
+
 set_target_properties(
     chat.exe
     PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${SOURCE_DIR}/examples/chat"
+)
+
+target_link_libraries(
+    latency.exe
+    ${peer_target}
+    ${ZYRE_LIBRARIES}
+    ${LIBZMQ_LIBRARIES}
+    ${CZMQ_LIBRARIES}
+    ${OPTIONAL_LIBRARIES}
+)
+
+set_target_properties(
+    latency.exe
+    PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${SOURCE_DIR}/examples/benchmarks"
 )
 
 # first we can indicate the documentation build as an option and set it to ON by default
