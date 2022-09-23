@@ -245,6 +245,27 @@ static const char *find_name(peer_t *self, const char *name)
     return uuid;
 }
 
+int peer_py_validate_name(const char *name)
+{
+    if (!name)
+    {
+        return -PEER_NAME_IS_NULL;
+    }
+    if (strlen(name) > PEER_NAME_MAXLEN)
+    {
+        return -PEER_NAME_LENGTH_INVALID;
+    }
+    if (strlen(name) < PEER_NAME_MINLEN)
+    {
+        return -PEER_NAME_LENGTH_INVALID;
+    }
+    if (!valid_name_str(name))
+    {
+        return -PEER_NAME_INVALID_CHARS;
+    }
+    return 0;
+}
+
 static inline int validate_name(const char *name)
 {
     if (!name)
@@ -328,6 +349,27 @@ static inline int validate_group(const char *group)
     }
     peer_errno = PEER_SUCCESS;
     return 1;
+}
+
+int peer_py_validate_message_type(const char *message_type)
+{
+    if (!message_type)
+    {
+        return -PEER_MESSAGETYPE_IS_NULL;
+    }
+    if (strlen(message_type) > PEER_MESSAGETYPE_MAXLEN)
+    {
+        return -PEER_MESSAGETYPE_LENGTH_INVALID;
+    }
+    if (strlen(message_type) < PEER_MESSAGETYPE_MINLEN)
+    {
+        return -PEER_MESSAGETYPE_LENGTH_INVALID;
+    }
+    if (!valid_name_str(message_type))
+    {
+        return -PEER_MESSAGETYPE_INVALID_CHARS;
+    }
+    return 0;
 }
 
 static inline int validate_message_type(const char *message_type)
@@ -553,6 +595,10 @@ static void callback_actor(zsock_t *pipe, void *arg)
                     if (!zhash_exists(self->py_on_connect_cbs, remote_name))
                     {
                         py_cb_exists = false;
+                        if (self->verbose)
+                        {
+                            zsys_error("Callback Actor: Python connect callback for %s not registered.", remote_name);
+                        }
                     }
                     if (!zhash_exists(self->on_connect_cbs, remote_name))
                     {
@@ -590,6 +636,10 @@ static void callback_actor(zsock_t *pipe, void *arg)
                     pcb = self->py_all_on_connect_cb;
                     cb = self->all_on_connect_cb;
                     local_args = self->all_on_connect_cb_args;
+                    if (self->verbose)
+                    {
+                        zsys_info("Callback Actor: Callback all connect: %p, %p, %p", pcb, cb, local_args);
+                    }
                 }
                 else if (streq(callback_type, CALLBACK_DISCONNECT_STR)) // for on_disconnect calls
                 {
@@ -766,17 +816,21 @@ static void callback_actor(zsock_t *pipe, void *arg)
                     goto loop_reset;
                 }
                 // 4. Execute the callback function
-                if (self->verbose)
-                {
-                    zsys_info("Executing callback function at %p.", cb);
-                }
                 // zsock_send(pipe, "i", executed++);
                 if (pcb)
                 {
-                    pcb(message_type, strlen(message_type) + 1, remote_name, strlen(remote_name) + 1, remote_args, remote_args_len);
+                    if (self->verbose)
+                    {
+                        zsys_info("Executing python callback function at %p: inputs %p(%d)[%s] %p(%d)[%s] %p(%d)", pcb, message_type, strlen(message_type) + 1, message_type, remote_name, strlen(remote_name) + 1, remote_name, remote_args, (int)remote_args_len);
+                    }
+                    pcb(self, message_type, (size_t)(strlen(message_type) + 1), remote_name, (size_t)(strlen(remote_name) + 1), remote_args, (size_t)remote_args_len);
                 }
                 if (cb)
                 {
+                    if (self->verbose)
+                    {
+                        zsys_info("Executing callback function at %p.", cb);
+                    }
                     cb(self, message_type, remote_name, local_args, remote_args, remote_args_len);
                 }
                 else
@@ -1019,7 +1073,7 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                             {
                                 zsys_info("%s> Peer %s inducted.", self->name, name);
                             }
-                            if (self->all_on_connect_cb)
+                            if (self->all_on_connect_cb || self->py_all_on_connect_cb)
                                 peer_invoke_callback(self, name, CALLBACK_CONNECT_ALL_STR);
                             peer_invoke_callback(self, name, CALLBACK_CONNECT_STR);
                         }
@@ -1111,7 +1165,7 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                         {
                             zsys_info("Peer name %s [%s] leaving.", name, uuid);
                         }
-                        if (self->all_on_disconnect_cb)
+                        if (self->all_on_disconnect_cb || self->py_all_on_exit_cb)
                             peer_invoke_callback(self, name, CALLBACK_DISCONNECT_ALL_STR);
                         peer_invoke_callback(self, name, CALLBACK_DISCONNECT_STR);
                     }
@@ -1840,8 +1894,8 @@ int peer_shout(peer_t *self, const char *message_type, void *data, size_t data_l
     rc = zyre_shout(self->node, self->group_hash, &msg);
     if (rc)
     {
-       self->peer_errno = -PEER_ZYRE_SHOUT_FAILED;
-       peer_errno = -PEER_ZYRE_SHOUT_FAILED;
+        self->peer_errno = -PEER_ZYRE_SHOUT_FAILED;
+        peer_errno = -PEER_ZYRE_SHOUT_FAILED;
     }
 clean_msg_type:
     free(msg_type);
@@ -2152,6 +2206,7 @@ int peer_start(peer_t *self)
     assert(self->node);
     int rc = 0;
     zpoller_t *poller = NULL;
+    assert(!zhash_insert(self->provisional_peers, self->name, strdup(zyre_uuid(self->node))));
     self->receiver = zactor_new(receiver_actor, self);
     if (!self->callback_driver)
     {
@@ -3000,6 +3055,10 @@ int peer_py_on_connect(peer_t *self, const char *peer, peer_py_callback_t _Nulla
     else
     {
         self->py_all_on_connect_cb = callback;
+        if (self->verbose)
+        {
+            zsys_info("%s> Peer on connect registered: ALL, %p | %p", self->name, callback, self->py_all_on_connect_cb);
+        }
         peer_errno = PEER_SUCCESS;
         self->peer_errno = PEER_SUCCESS;
         rc = 0;
@@ -3017,6 +3076,13 @@ int peer_py_on_connect(peer_t *self, const char *peer, peer_py_callback_t _Nulla
         peer_errno = -PEER_CALLBACK_INSERTION_FAILED;
         self->peer_errno = -PEER_CALLBACK_INSERTION_FAILED;
         goto cleanup_name;
+    }
+
+    zsys_info("%s> Inserted %p, got %p (%s)", self->name, callback, zhash_lookup(self->py_on_connect_cbs, _name), _name);
+
+    if (self->verbose)
+    {
+        zsys_info("%s> Peer on connect registered: %s (%s), %p | %p", self->name, peer, _name, callback, zhash_lookup(self->py_on_connect_cbs, _name));
     }
 
     peer_errno = PEER_SUCCESS;
@@ -3383,6 +3449,12 @@ int peer_py_disable_on_silent(peer_t *self, const char *peer)
 cleanup_name:
     destroy_ptr(_name);
     return rc;
+}
+
+int peer_py_errno(peer_t *self)
+{
+    assert(self);
+    return self->peer_errno;
 }
 
 // ------------------ END CLASS FUNCTIONS -------------------- //

@@ -160,7 +160,7 @@ ENDIF (zyre_FOUND)
 ########################################################################
 set(PEER_VERSION_MAJOR 2)
 set(PEER_VERSION_MINOR 1)
-set(PEER_VERSION_PATCH 2)
+set(PEER_VERSION_PATCH 3)
 set(PEER_VERSION "${PEER_VERSION_MAJOR}.${PEER_VERSION_MINOR}.${PEER_VERSION_PATCH}")
 message(STATUS "Detected PEER Version - ${PEER_VERSION}")
 
@@ -309,7 +309,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/src/CMakeLists-local.txt) # Optional project
 ########################################################################
 # pkgconfig
 ########################################################################
-set (VERSION "2.1.2")
+set (VERSION "2.1.3")
 set (prefix "${CMAKE_INSTALL_PREFIX}")
 set (exec_prefix "\${prefix}")
 set (libdir "\${prefix}/lib${LIB_SUFFIX}")
