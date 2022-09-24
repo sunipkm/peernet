@@ -128,3 +128,8 @@ nbproject/
 
 # editor backups
 *~
+
+# OS specific
+**/.DS_Store
+**/*.db
+**/*.ini

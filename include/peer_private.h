@@ -66,6 +66,14 @@ typedef void (*peer_py_callback_t)(peer_t *self, char *_Nonnull message_type, si
 PEER_EXPORT int peer_py_validate_name(const char *name);
 
 /**
+ * @brief Validate group and send error codes.
+ *
+ * @param group Group to validate.
+ * @return PEER_EXPORT Negative on error, 0 on success.
+ */
+PEER_EXPORT int peer_py_validate_group(const char *group);
+
+/**
  * @brief Validate message_type and send error codes
  *
  * @param name Message type to validate

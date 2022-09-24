@@ -1,4 +1,5 @@
 # PeerNet Changelog
+1. [2022-09-24] (v.2.1.4) Backend updates for (pypeernet)[https://github.com/sunipkm/pypeernet].
 1. [2022-09-23] (v.2.1.3) Peer collision detection was fixed after authentication update.
 1. [2022-09-21] (v.2.1.2) peernet_errno extern was not declared.
 1. [2022-09-21] (v.2.1.1) Fixed doxygen, small memory leak.

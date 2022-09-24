@@ -351,6 +351,29 @@ static inline int validate_group(const char *group)
     return 1;
 }
 
+int peer_py_validate_group(const char *group)
+{
+    if (!group)
+    {
+        return -PEER_GROUP_IS_NULL;
+    }
+    int name_len = strlen(group);
+    if (name_len > PEER_GROUP_MAXLEN)
+    {
+        return -PEER_GROUP_LENGTH_INVALID;
+    }
+    if (name_len < PEER_GROUP_MINLEN)
+    {
+        return -PEER_GROUP_LENGTH_INVALID;
+    }
+    bool name_valid = valid_name_str(group);
+    if (!name_valid)
+    {
+        return -PEER_GROUP_INVALID_CHARS;
+    }
+    return PEER_SUCCESS;
+}
+
 int peer_py_validate_message_type(const char *message_type)
 {
     if (!message_type)
@@ -771,6 +794,8 @@ static void callback_actor(zsock_t *pipe, void *arg)
                         zsys_error("Callback Actor: Callback for %s from %s does not contain a valid remote data frame.", message_type, remote_name);
                         goto loop_reset;
                     }
+                    remote_args = zframe_data(frame);
+                    remote_args_len = zframe_size(frame);
                     if (!zhash_exists(self->py_on_message_cbs, hash))
                     {
                         py_cb_exists = false;
@@ -783,7 +808,7 @@ static void callback_actor(zsock_t *pipe, void *arg)
                         }
                         c_cb_exists = false;
                     }
-                    if (!zhash_exists(self->on_message_cb_args, hash))
+                    if (c_cb_exists && !zhash_exists(self->on_message_cb_args, hash))
                     {
                         if (self->verbose)
                         {
@@ -796,12 +821,14 @@ static void callback_actor(zsock_t *pipe, void *arg)
                     {
                         cb = zhash_lookup(self->on_message_cbs, hash);
                         local_args = zhash_lookup(self->on_message_cb_args, hash);
-                        remote_args = zframe_data(frame);
-                        remote_args_len = zframe_size(frame);
                     }
                     if (py_cb_exists)
                     {
                         pcb = zhash_lookup(self->py_on_message_cbs, hash);
+                        if (self->verbose)
+                        {
+                            zsys_info("%s> Python callback for %s from %s: %p", message_type, remote_name, pcb);
+                        }
                     }
                     if ((!c_cb_exists) && (!py_cb_exists))
                     {
@@ -811,7 +838,9 @@ static void callback_actor(zsock_t *pipe, void *arg)
                 else
                 {
                     if (strlen(callback_type) > 50)
+                    {
                         callback_type[51] = '\0'; // limit length
+                    }
                     zsys_error("Callback Actor: Unknown callback type %s.", (callback_type));
                     goto loop_reset;
                 }
@@ -1522,10 +1551,12 @@ int peer_set_port(peer_t *self, int port)
     if ((port < 1000) || (port > 65535))
     {
         peer_errno = -PEER_PORT_RANGE_INVALID;
+        self->peer_errno = -PEER_PORT_RANGE_INVALID;
         return -1;
     }
     zyre_set_port(self->node, port);
     peer_errno = PEER_SUCCESS;
+    self->peer_errno = -PEER_PORT_RANGE_INVALID;
     return 0;
 }
 
@@ -1536,10 +1567,12 @@ int peer_set_evasive_timeout(peer_t *self, unsigned int interval_ms)
     if (interval_ms > PEER_INTERVAL_MS_MAX) //
     {
         peer_errno = -PEER_INTERVAL_TOO_LARGE;
+        self->peer_errno = -PEER_INTERVAL_TOO_LARGE;
         return -1;
     }
     zyre_set_evasive_timeout(self->node, interval_ms);
     peer_errno = PEER_SUCCESS;
+    self->peer_errno = PEER_SUCCESS;
     return 0;
 }
 
@@ -1550,10 +1583,12 @@ int peer_set_expired_timeout(peer_t *self, unsigned int interval_ms)
     if (interval_ms > PEER_INTERVAL_MS_MAX) //
     {
         peer_errno = -PEER_INTERVAL_TOO_LARGE;
+        self->peer_errno = -PEER_INTERVAL_TOO_LARGE;
         return -1;
     }
     zyre_set_expired_timeout(self->node, interval_ms);
     peer_errno = PEER_SUCCESS;
+    self->peer_errno = PEER_SUCCESS;
     return 0;
 }
 
@@ -1564,10 +1599,12 @@ int peer_set_interval(peer_t *self, size_t interval_ms)
     if (interval_ms > PEER_INTERVAL_MS_MAX) //
     {
         peer_errno = -PEER_INTERVAL_TOO_LARGE;
+        self->peer_errno = -PEER_INTERVAL_TOO_LARGE;
         return -1;
     }
     zyre_set_interval(self->node, interval_ms);
     peer_errno = PEER_SUCCESS;
+    self->peer_errno = PEER_SUCCESS;
     return 0;
 }
 
