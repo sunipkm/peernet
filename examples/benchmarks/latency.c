@@ -2,7 +2,9 @@
 
 const char *random_name()
 {
-    static char buf[10] = {0x0, };
+    static char buf[10] = {
+        0x0,
+    };
     for (int i = 0; i < 9; i++)
     {
         buf[i] = 'a' + (rand() % 26);
@@ -13,17 +15,18 @@ const char *random_name()
 void receive_cb_t(peer_t *peer, const char *message_type, const char *remote_name, void *local_data, void *remote_data, size_t remote_data_len)
 {
     // this is the remote data receive
-    FILE *fp = (FILE *) local_data;
+    int64_t ts = zclock_usecs();
+    FILE *fp = (FILE *)local_data;
     assert(fp);
-    char *buf = (char *) remote_data;
+    char *buf = (char *)remote_data;
     assert(buf);
-    fprintf(fp, "recv:%s>%s\n", remote_name, buf);
+    fprintf(fp, "recv:%s>%s,%" PRId64 "\n", remote_name, buf, ts);
 }
 
 void o_receive_cb_t(peer_t *peer, const char *message_type, const char *remote_name, void *local_data, void *remote_data, size_t remote_data_len)
 {
     int64_t ts = zclock_usecs();
-    peer_whispers(peer, remote_name, "TIME_UPDATE", "%s,%"PRId64, (char *) remote_data, ts);
+    peer_whispers(peer, remote_name, "TIME_UPDATE", "%s,%" PRId64, (char *)remote_data, ts);
 }
 
 int main(int argc, char *argv[])
@@ -35,7 +38,7 @@ int main(int argc, char *argv[])
     }
     int num_peers = atoi(argv[1]);
     int num_loop = atoi(argv[2]);
-    num_peers &= 0xfffffffe;
+    num_peers |= 0x1;
     bool encryption = false;
     if (argc == 4)
         encryption = true;
@@ -55,13 +58,13 @@ int main(int argc, char *argv[])
     char buf[100];
     time_t rawtime;
     struct tm *info;
-    time( &rawtime );
-    info = localtime( &rawtime );
-    strftime(buf,80,"%Y%m%d%H%M%S", info);
+    time(&rawtime);
+    info = localtime(&rawtime);
+    strftime(buf, 80, "%Y%m%d%H%M%S", info);
     FILE *fp = fopen(zsys_sprintf("out_%s.txt", buf), "w");
     assert(fp);
     // associate callback with one peer
-    peer_t *peer = zhash_first(peers); // first
+    peer_t *peer = zhash_first(peers);  // first
     peer_t *o_peer = zhash_next(peers); // second
     for (; o_peer; o_peer = zhash_next(peers))
     {
@@ -74,7 +77,16 @@ int main(int argc, char *argv[])
     {
         int64_t ts = zclock_usecs();
         peer_shouts(zhash_first(peers), "TIME_UPDATE", "%" PRId64, ts);
-        zclock_sleep(1000);
+        if (num_loop)
+        {
+            printf("Remaining: %d    \r", num_loop);
+        }
+        else
+        {
+            printf("\n");
+        }
+        fflush(stdout);
+        zclock_sleep(500);
     }
     for (peer = zhash_first(peers); peer; peer = zhash_next(peers))
     {
