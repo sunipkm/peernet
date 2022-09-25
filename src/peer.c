@@ -854,7 +854,7 @@ static void callback_actor(zsock_t *pipe, void *arg)
                     }
                     pcb(self, message_type, (size_t)(strlen(message_type) + 1), remote_name, (size_t)(strlen(remote_name) + 1), remote_args, (size_t)remote_args_len);
                 }
-                if (cb)
+                else if (cb)
                 {
                     if (self->verbose)
                     {
@@ -864,7 +864,10 @@ static void callback_actor(zsock_t *pipe, void *arg)
                 }
                 else
                 {
-                    zsys_info("Callback function is NULL for %s from %s.", message_type, remote_name);
+                    if (self->verbose)
+                    {
+                        zsys_info("Callback function is NULL for %s from %s.", message_type, remote_name);
+                    }
                 }
                 // zsock_send(pipe, "i", executed);
                 if (self->verbose)
