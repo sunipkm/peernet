@@ -17,4 +17,13 @@
     <use project = "zyre" />
     <class name = "peer" />
     <class name = "peer_md5sum" private = "1" />
+    <target name = "vs2010"/>
+    <target name = "vs2012"/>
+    <target name = "vs2013"/>
+    <target name = "vs2015"/>
+    <target name = "vs2017"/>
+    <target name = "vs2019"/>
+    <target name = "mingw32"/>
+    <target name = "travis"/>
+
 </project>

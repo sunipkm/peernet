@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "peer_library.h": "c",
+        "czmq.h": "c"
+    }
+}

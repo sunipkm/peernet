@@ -133,3 +133,6 @@ nbproject/
 **/.DS_Store
 **/*.db
 **/*.ini
+
+# VS Code
+**/.vscodeg
