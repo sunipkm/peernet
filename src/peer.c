@@ -948,7 +948,10 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
 
         if ((which == NULL) && (zpoller_expired(poller))) // we don't care about SIGINT, peer creator does.
         {
-            zsys_info("%s> Poller timed out", self->name);
+            if (self->verbose)
+            {
+                zsys_info("%s> Poller timed out", self->name);
+            }
             // check if authentication time period has expired
             if (attempted_auth)
             {
@@ -970,7 +973,10 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
             }
             else if (!self->started)
             {
-                zsys_info("%s> Heard nothing, probably only one here. Can take ownership of group %s.", self->name, self->group);
+                if (self->verbose)
+                {
+                    zsys_info("%s> Heard nothing, probably only one here. Can take ownership of group %s.", self->name, self->group);
+                }
                 zsock_send(pipe, "i", PEER_SUCCESS);
                 timeout = -1;
             }

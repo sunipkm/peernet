@@ -45,6 +45,14 @@
 PEER_PRIVATE int peer_whisper_internal(peer_t *self, const char *peer, const char *internal_message_type, const char *message_type, void *data, size_t data_len);
 
 /**
+ * @brief Stop the peer. This signals to the other peers that this peer will go away.
+ * This is polite; however the node can be destroyed without stopping.
+ *
+ * @param self Local instance of peer.
+ */
+PEER_PRIVATE void peer_stop(peer_t *_Nonnull self);
+
+/**
  * @brief Python callback function shape
  *
  * @param self Pointer to local instance of peer, in order to deal with class functions in Python land

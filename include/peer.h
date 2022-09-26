@@ -382,14 +382,6 @@ PEER_EXPORT void peer_gossip_connect(peer_t *_Nonnull self, const char *_Nonnull
 PEER_EXPORT int peer_start(peer_t *_Nonnull self);
 
 /**
- * @brief Stop the peer. This signals to the other peers that this peer will go away.
- * This is polite; however the node can be destroyed without stopping.
- *
- * @param self Local instance of peer.
- */
-PEER_EXPORT void peer_stop(peer_t *_Nonnull self);
-
-/**
  * @brief Send (whisper) a message to a single peer on the network. Destroys
  * the message after sending.
  *
