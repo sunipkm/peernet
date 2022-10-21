@@ -23,6 +23,11 @@
         fflush(stderr);                                                         \
     }
 
+#if defined(__WINDOWS__)
+#define strndup(a, b) strdup(a)
+#define strncasecmp _strnicmp
+#endif
+
 #define CALLBACK_CMD_STR "CALLBACK"
 #define CALLBACK_CONNECT_STR "CONNECT"
 #define CALLBACK_CONNECT_ALL_STR "CONNECT_ALL"
@@ -92,12 +97,6 @@ static const char *peernet_error_str[PEER_MAX_ERROR] = {
     "Peer authentication failed",                           // 53
     "Peer zpoller timed out"                                // 54
 };
-
-#ifdef __WINDOWS__
-__declspec(thread) int peer_errno = PEER_SUCCESS;
-#else
-__thread int peer_errno = PEER_SUCCESS;
-#endif
 
 struct _peer_t
 {
@@ -178,7 +177,7 @@ int zhash_exists(zhash_t *hash, const char *key)
     assert(key_list);
     int rc = 0;
     char *in_key;
-    for (in_key = zlist_first(key_list); in_key; in_key = zlist_next(key_list))
+    for (in_key = (char *)zlist_first(key_list); in_key; in_key = (char *)zlist_next(key_list))
     {
         if (streq(in_key, key))
         {
@@ -209,7 +208,7 @@ static inline bool valid_name_str(const char *name)
 {
     bool name_valid = true;
     char *s = (char *)name;
-    while (*s & name_valid)
+    while (*s && name_valid)
     {
         name_valid &= (isalnum(*s) || ((*s) == '_'));
         s++;
@@ -239,7 +238,7 @@ static const char *find_name(peer_t *self, const char *name)
 
     str_to_upper(_name);
 
-    const char *uuid = zhash_lookup(self->available_peers, _name);
+    const char *uuid = (const char *)zhash_lookup(self->available_peers, _name);
     destroy_ptr(_name);
 
     return uuid;
@@ -270,25 +269,20 @@ static inline int validate_name(const char *name)
 {
     if (!name)
     {
-        peer_errno = -PEER_NAME_IS_NULL;
-        return 0;
+        return  -PEER_NAME_IS_NULL;
     }
     if (strlen(name) > PEER_NAME_MAXLEN)
     {
-        peer_errno = -PEER_NAME_LENGTH_INVALID;
-        return 0;
+        return  -PEER_NAME_LENGTH_INVALID;
     }
     if (strlen(name) < PEER_NAME_MINLEN)
     {
-        peer_errno = -PEER_NAME_LENGTH_INVALID;
-        return 0;
+        return  -PEER_NAME_LENGTH_INVALID;
     }
     if (!valid_name_str(name))
     {
-        peer_errno = -PEER_NAME_INVALID_CHARS;
-        return 0;
+        return  -PEER_NAME_INVALID_CHARS;
     }
-    peer_errno = PEER_SUCCESS;
     return 1;
 }
 
@@ -296,59 +290,49 @@ static inline int _validate_name(peer_t *self, const char *name)
 {
     if (!name)
     {
-        peer_errno = -PEER_NAME_IS_NULL;
         self->peer_errno = -PEER_NAME_IS_NULL;
-        return 0;
+        return -PEER_NAME_IS_NULL;
     }
     if (strlen(name) > PEER_NAME_MAXLEN)
     {
         self->peer_errno = -PEER_NAME_LENGTH_INVALID;
-        peer_errno = -PEER_NAME_LENGTH_INVALID;
-        return 0;
+        return -PEER_NAME_LENGTH_INVALID;
     }
     if (strlen(name) < PEER_NAME_MINLEN)
     {
         self->peer_errno = -PEER_NAME_LENGTH_INVALID;
-        peer_errno = -PEER_NAME_LENGTH_INVALID;
-        return 0;
+        return -PEER_NAME_LENGTH_INVALID;
     }
     if (!valid_name_str(name))
     {
         self->peer_errno = -PEER_NAME_INVALID_CHARS;
-        peer_errno = -PEER_NAME_INVALID_CHARS;
-        return 0;
+        return -PEER_NAME_INVALID_CHARS;
     }
     self->peer_errno = PEER_SUCCESS;
-    peer_errno = PEER_SUCCESS;
-    return 1;
+    return PEER_SUCCESS;
 }
 
 static inline int validate_group(const char *group)
 {
     if (!group)
     {
-        peer_errno = -PEER_GROUP_IS_NULL;
-        return 0;
+        return -PEER_GROUP_IS_NULL;
     }
-    int name_len = strlen(group);
+    size_t name_len = strlen(group);
     if (name_len > PEER_GROUP_MAXLEN)
     {
-        peer_errno = -PEER_GROUP_LENGTH_INVALID;
-        return 0;
+        return -PEER_GROUP_LENGTH_INVALID;
     }
     if (name_len < PEER_GROUP_MINLEN)
     {
-        peer_errno = -PEER_GROUP_LENGTH_INVALID;
-        return 0;
+        return -PEER_GROUP_LENGTH_INVALID;
     }
     bool name_valid = valid_name_str(group);
     if (!name_valid)
     {
-        peer_errno = -PEER_GROUP_INVALID_CHARS;
-        return 0;
+        return -PEER_GROUP_INVALID_CHARS;
     }
-    peer_errno = PEER_SUCCESS;
-    return 1;
+    return PEER_SUCCESS;
 }
 
 int peer_py_validate_group(const char *group)
@@ -357,7 +341,7 @@ int peer_py_validate_group(const char *group)
     {
         return -PEER_GROUP_IS_NULL;
     }
-    int name_len = strlen(group);
+    size_t name_len = strlen(group);
     if (name_len > PEER_GROUP_MAXLEN)
     {
         return -PEER_GROUP_LENGTH_INVALID;
@@ -399,25 +383,20 @@ static inline int validate_message_type(const char *message_type)
 {
     if (!message_type)
     {
-        peer_errno = -PEER_MESSAGETYPE_IS_NULL;
-        return 0;
+        return -PEER_MESSAGETYPE_IS_NULL;
     }
     if (strlen(message_type) > PEER_MESSAGETYPE_MAXLEN)
     {
-        peer_errno = -PEER_MESSAGETYPE_LENGTH_INVALID;
-        return 0;
+        return -PEER_MESSAGETYPE_LENGTH_INVALID;
     }
     if (strlen(message_type) < PEER_MESSAGETYPE_MINLEN)
     {
-        peer_errno = -PEER_MESSAGETYPE_LENGTH_INVALID;
-        return 0;
+        return -PEER_MESSAGETYPE_LENGTH_INVALID;
     }
     if (!valid_name_str(message_type))
     {
-        peer_errno = -PEER_MESSAGETYPE_INVALID_CHARS;
-        return 0;
+        return -PEER_MESSAGETYPE_INVALID_CHARS;
     }
-    peer_errno = PEER_SUCCESS;
     return 1;
 }
 
@@ -425,57 +404,47 @@ static inline int _validate_message_type(peer_t *self, const char *message_type)
 {
     if (!message_type)
     {
-        peer_errno = -PEER_MESSAGETYPE_IS_NULL;
         self->peer_errno = -PEER_MESSAGETYPE_IS_NULL;
-        return 0;
+        return -PEER_MESSAGETYPE_IS_NULL;
     }
     if (strlen(message_type) > PEER_MESSAGETYPE_MAXLEN)
     {
-        peer_errno = -PEER_MESSAGETYPE_LENGTH_INVALID;
         self->peer_errno = -PEER_MESSAGETYPE_LENGTH_INVALID;
-        return 0;
+        return -PEER_MESSAGETYPE_LENGTH_INVALID;
     }
     if (strlen(message_type) < PEER_MESSAGETYPE_MINLEN)
     {
-        peer_errno = -PEER_MESSAGETYPE_LENGTH_INVALID;
         self->peer_errno = -PEER_MESSAGETYPE_LENGTH_INVALID;
-        return 0;
+        return -PEER_MESSAGETYPE_LENGTH_INVALID;
     }
     if (!valid_name_str(message_type))
     {
-        peer_errno = -PEER_MESSAGETYPE_INVALID_CHARS;
         self->peer_errno = -PEER_MESSAGETYPE_INVALID_CHARS;
-        return 0;
+        return -PEER_MESSAGETYPE_INVALID_CHARS;
     }
-    peer_errno = PEER_SUCCESS;
     self->peer_errno = PEER_SUCCESS;
-    return 1;
+    return PEER_SUCCESS;
 }
 
 static inline int validate_password(const char *password)
 {
     if (!password)
     {
-        peer_errno = -PEER_PASSWORD_IS_NULL;
-        return 0;
+        return -PEER_PASSWORD_IS_NULL;
     }
     if (strlen(password) > PEER_PASSWORD_MAXLEN)
     {
-        peer_errno = -PEER_PASSWORD_LENGTH_INVALID;
-        return 0;
+        return -PEER_PASSWORD_LENGTH_INVALID;
     }
     if (strlen(password) < PEER_PASSWORD_MINLEN)
     {
-        peer_errno = -PEER_PASSWORD_LENGTH_INVALID;
-        return 0;
+        return -PEER_PASSWORD_LENGTH_INVALID;
     }
     if (!valid_name_str(password))
     {
-        peer_errno = -PEER_PASSWORD_INVALID_CHARS;
-        return 0;
+        return -PEER_PASSWORD_INVALID_CHARS;
     }
-    peer_errno = PEER_SUCCESS;
-    return 1;
+    return PEER_SUCCESS;
 }
 
 static inline void peer_invoke_callback(peer_t *self, const char *name, const char *callback_type)
@@ -544,7 +513,6 @@ static inline bool auth_hash_compare(void *p1, void *p2)
 }
 
 // ---------------- END HELPER FUNCTIONS -------------------- //
-
 static void callback_actor(zsock_t *pipe, void *arg)
 {
     assert(pipe);
@@ -642,12 +610,12 @@ static void callback_actor(zsock_t *pipe, void *arg)
                     }
                     if (c_cb_exists)
                     {
-                        cb = zhash_lookup(self->on_connect_cbs, remote_name);
+                        cb = (peer_callback_t)zhash_lookup(self->on_connect_cbs, remote_name);
                         local_args = zhash_lookup(self->on_connect_cb_args, remote_name);
                     }
                     if (py_cb_exists)
                     {
-                        pcb = zhash_lookup(self->py_on_connect_cbs, remote_name);
+                        pcb = (peer_py_callback_t)zhash_lookup(self->py_on_connect_cbs, remote_name);
                     }
                     if ((!c_cb_exists) && (!py_cb_exists))
                     {
@@ -689,12 +657,12 @@ static void callback_actor(zsock_t *pipe, void *arg)
                     }
                     if (c_cb_exists)
                     {
-                        cb = zhash_lookup(self->on_exit_cbs, remote_name);
+                        cb = (peer_callback_t)zhash_lookup(self->on_exit_cbs, remote_name);
                         local_args = zhash_lookup(self->on_exit_cb_args, remote_name);
                     }
                     if (py_cb_exists)
                     {
-                        pcb = zhash_lookup(self->py_on_exit_cbs, remote_name);
+                        pcb = (peer_py_callback_t)zhash_lookup(self->py_on_exit_cbs, remote_name);
                     }
                     if ((!c_cb_exists) && (!py_cb_exists))
                     {
@@ -732,12 +700,12 @@ static void callback_actor(zsock_t *pipe, void *arg)
                     }
                     if (c_cb_exists)
                     {
-                        cb = zhash_lookup(self->on_evasive_cbs, remote_name);
+                        cb = (peer_callback_t)zhash_lookup(self->on_evasive_cbs, remote_name);
                         local_args = zhash_lookup(self->on_evasive_cb_args, remote_name);
                     }
                     if (py_cb_exists)
                     {
-                        pcb = zhash_lookup(self->py_on_evasive_cbs, remote_name);
+                        pcb = (peer_py_callback_t)zhash_lookup(self->py_on_evasive_cbs, remote_name);
                     }
                     if ((!c_cb_exists) && (!py_cb_exists))
                     {
@@ -769,12 +737,12 @@ static void callback_actor(zsock_t *pipe, void *arg)
                     }
                     if (c_cb_exists)
                     {
-                        cb = zhash_lookup(self->on_silent_cbs, remote_name);
+                        cb = (peer_callback_t)zhash_lookup(self->on_silent_cbs, remote_name);
                         local_args = zhash_lookup(self->on_silent_cb_args, remote_name);
                     }
                     if (py_cb_exists)
                     {
-                        pcb = zhash_lookup(self->py_on_silent_cbs, remote_name);
+                        pcb = (peer_py_callback_t)zhash_lookup(self->py_on_silent_cbs, remote_name);
                     }
                     if ((!c_cb_exists) && (!py_cb_exists))
                     {
@@ -819,12 +787,12 @@ static void callback_actor(zsock_t *pipe, void *arg)
                     }
                     if (c_cb_exists)
                     {
-                        cb = zhash_lookup(self->on_message_cbs, hash);
+                        cb = (peer_callback_t)zhash_lookup(self->on_message_cbs, hash);
                         local_args = zhash_lookup(self->on_message_cb_args, hash);
                     }
                     if (py_cb_exists)
                     {
-                        pcb = zhash_lookup(self->py_on_message_cbs, hash);
+                        pcb = (peer_py_callback_t)zhash_lookup(self->py_on_message_cbs, hash);
                         if (self->verbose)
                         {
                             zsys_info("%s> Python callback for %s from %s: %p", message_type, remote_name, pcb);
@@ -936,7 +904,7 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
     assert(!zsock_signal(pipe, PEER_SUCCESS)); // clear zactor_new
     assert(!zsock_signal(pipe, PEER_SUCCESS)); // let caller know of status
     bool terminated = false;
-    int timeout = self->auth_wait_time - 1000;
+    int64_t timeout = self->auth_wait_time - 1000;
     int64_t tstamp = 0;
     while (!terminated)
     {
@@ -1226,7 +1194,7 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                 }
                 if (in_our_group)
                 {
-                    int *retry_count = zhash_lookup(self->peer_retries, name);
+                    int *retry_count = (int *)zhash_lookup(self->peer_retries, name);
                     if (retry_count)
                     {
                         int val = *retry_count;
@@ -1268,7 +1236,7 @@ static void receiver_actor(zsock_t *pipe, void *_args) // Forward declaration.
                 }
             }
 
-            else if ((streq(event, "WHISPER") || streq(event, "SHOUT")) && streq(internal_msg, EXTERNAL_MESSAGE_STR) && validate_message_type(message_type)) // user message
+            else if ((streq(event, "WHISPER") || streq(event, "SHOUT")) && streq(internal_msg, EXTERNAL_MESSAGE_STR) && (validate_message_type(message_type) > 0)) // user message
             {
                 bool in_our_group = (streq(group, self->group_hash)); // check if peer is in our group by comparing the group name sent by the peer against our group hash
                 if (self->verbose)
@@ -1340,7 +1308,7 @@ bool peer_exists(peer_t *self, const char *name)
     assert(name);
     if (!self->started)
         return false;
-    if (!validate_name(name))
+    if (validate_name(name) < 0)
     {
         return false;
     }
@@ -1350,7 +1318,7 @@ bool peer_exists(peer_t *self, const char *name)
 }
 
 peer_t *peer_new(const char *name, const char *group, const char *password, bool encryption)
-{
+{   
     peer_t *self = NULL;
     char *_name = NULL, *_group = NULL, _group_hash[33] = {
                                             0x0,
@@ -1360,21 +1328,24 @@ peer_t *peer_new(const char *name, const char *group, const char *password, bool
     char *_passwd = NULL;
     // 1. Check name
     int rc = validate_name(name);
-    if (!rc)
+    if (rc < 0)
     {
+        errno = rc;
         return NULL;
     }
     // 1a. Check password
     rc = validate_password(password);
-    if (!rc)
+    if (rc < 0)
     {
+        errno = rc;
         return NULL;
     }
     // 2. Check group name
     if (group) // non NULL
     {
-        if (!validate_group(group))
+        if (validate_group(group) < 0)
         {
+            errno = rc;
             return NULL;
         }
         _group = strdup(group);
@@ -1394,7 +1365,7 @@ peer_t *peer_new(const char *name, const char *group, const char *password, bool
     assert(_passwd);
     if (!group_hash)
     {
-        peer_errno = -PEER_GROUP_HASH_FAILED;
+        rc = -PEER_GROUP_HASH_FAILED;
         goto cleanup_group;
     }
     for (int i = 0; i < 16; i++)
@@ -1408,7 +1379,7 @@ peer_t *peer_new(const char *name, const char *group, const char *password, bool
     self->node = zyre_new(_name);
     if (!self->node)
     {
-        peer_errno = -PEER_NODE_CREATE_FAILED;
+        rc = -PEER_NODE_CREATE_FAILED;
         goto cleanup_all;
     }
     if (encryption)
@@ -1431,14 +1402,14 @@ peer_t *peer_new(const char *name, const char *group, const char *password, bool
     assert(self->available_peers);
     if (zhash_insert(self->available_peers, zyre_name(self->node), strdup(zyre_uuid(self->node))))
     {
-        peer_errno = -PEER_SELF_INSERTION_FAILED;
+        rc = -PEER_SELF_INSERTION_FAILED;
         goto cleanup_all;
     }
     self->available_uuids = zhash_new();
     assert(self->available_uuids);
     if (zhash_insert(self->available_uuids, zyre_uuid(self->node), strdup(zyre_name(self->node))))
     {
-        peer_errno = -PEER_SELF_INSERTION_FAILED;
+        rc = -PEER_SELF_INSERTION_FAILED;
         goto cleanup_all;
     }
     self->auth_wait_time = PEER_AUTH_TIMEOUT;
@@ -1481,7 +1452,7 @@ peer_t *peer_new(const char *name, const char *group, const char *password, bool
     self->py_on_message_cbs = zhash_new();
     assert(self->py_on_message_cbs);
 
-    peer_errno = PEER_SUCCESS;
+    errno = PEER_SUCCESS;
     return self;
 cleanup_all:
     destroy_ptr(self);
@@ -1493,6 +1464,7 @@ cleanup_name:
     destroy_ptr(_name);
 ret_error:
     zcert_destroy(&cert);
+    errno = rc;
     return self;
 }
 
@@ -1559,14 +1531,12 @@ int peer_set_port(peer_t *self, int port)
     assert(self->node);
     if ((port < 1000) || (port > 65535))
     {
-        peer_errno = -PEER_PORT_RANGE_INVALID;
         self->peer_errno = -PEER_PORT_RANGE_INVALID;
-        return -1;
+        return -PEER_PORT_RANGE_INVALID;
     }
     zyre_set_port(self->node, port);
-    peer_errno = PEER_SUCCESS;
     self->peer_errno = -PEER_PORT_RANGE_INVALID;
-    return 0;
+    return PEER_SUCCESS;
 }
 
 int peer_set_evasive_timeout(peer_t *self, unsigned int interval_ms)
@@ -1575,14 +1545,13 @@ int peer_set_evasive_timeout(peer_t *self, unsigned int interval_ms)
     assert(self->node);
     if (interval_ms > PEER_INTERVAL_MS_MAX) //
     {
-        peer_errno = -PEER_INTERVAL_TOO_LARGE;
         self->peer_errno = -PEER_INTERVAL_TOO_LARGE;
+        return -PEER_INTERVAL_TOO_LARGE;
         return -1;
     }
     zyre_set_evasive_timeout(self->node, interval_ms);
-    peer_errno = PEER_SUCCESS;
     self->peer_errno = PEER_SUCCESS;
-    return 0;
+    return PEER_SUCCESS;
 }
 
 int peer_set_expired_timeout(peer_t *self, unsigned int interval_ms)
@@ -1591,14 +1560,12 @@ int peer_set_expired_timeout(peer_t *self, unsigned int interval_ms)
     assert(self->node);
     if (interval_ms > PEER_INTERVAL_MS_MAX) //
     {
-        peer_errno = -PEER_INTERVAL_TOO_LARGE;
         self->peer_errno = -PEER_INTERVAL_TOO_LARGE;
-        return -1;
+        return -PEER_INTERVAL_TOO_LARGE;
     }
     zyre_set_expired_timeout(self->node, interval_ms);
-    peer_errno = PEER_SUCCESS;
     self->peer_errno = PEER_SUCCESS;
-    return 0;
+    return PEER_SUCCESS;
 }
 
 int peer_set_interval(peer_t *self, size_t interval_ms)
@@ -1607,14 +1574,12 @@ int peer_set_interval(peer_t *self, size_t interval_ms)
     assert(self->node);
     if (interval_ms > PEER_INTERVAL_MS_MAX) //
     {
-        peer_errno = -PEER_INTERVAL_TOO_LARGE;
         self->peer_errno = -PEER_INTERVAL_TOO_LARGE;
-        return -1;
+        return -PEER_INTERVAL_TOO_LARGE;
     }
     zyre_set_interval(self->node, interval_ms);
-    peer_errno = PEER_SUCCESS;
     self->peer_errno = PEER_SUCCESS;
-    return 0;
+    return PEER_SUCCESS;
 }
 
 void peer_set_interface(peer_t *self, const char *value)
@@ -1678,32 +1643,32 @@ int peer_whisper_internal(peer_t *self, const char *peer, const char *internal_m
     zmsg_t *msg = zmsg_new();
     if (!msg)
     {
-        peer_errno = -PEER_ZMSG_NEW_FAILED;
         self->peer_errno = -PEER_ZMSG_NEW_FAILED;
+        rc = -PEER_ZMSG_NEW_FAILED;
         goto clean_msg_type;
     }
 
     rc = zmsg_addstr(msg, self->group_hash); // somehow group info is not sent when whispering
     if (rc)
     {
-        peer_errno = -PEER_ZMSG_STR_INSERT_FAILED;
         self->peer_errno = -PEER_ZMSG_STR_INSERT_FAILED;
+        rc = -PEER_ZMSG_STR_INSERT_FAILED;
         goto clean_msg_type;
     }
 
     rc = zmsg_addstr(msg, internal_message_type);
     if (rc)
     {
-        peer_errno = -PEER_ZMSG_STR_INSERT_FAILED;
         self->peer_errno = -PEER_ZMSG_STR_INSERT_FAILED;
+        rc = -PEER_ZMSG_STR_INSERT_FAILED;
         goto clean_msg_type;
     }
 
     rc = zmsg_addstr(msg, message_type);
     if (rc)
     {
-        peer_errno = -PEER_ZMSG_STR_INSERT_FAILED;
         self->peer_errno = -PEER_ZMSG_STR_INSERT_FAILED;
+        rc = -PEER_ZMSG_STR_INSERT_FAILED;
         goto clean_msg_type;
     }
 
@@ -1712,8 +1677,8 @@ int peer_whisper_internal(peer_t *self, const char *peer, const char *internal_m
         rc = zmsg_addmem(msg, data, data_len);
         if (rc)
         {
-            peer_errno = -PEER_ZMSG_MEM_INSERT_FAILED;
             self->peer_errno = -PEER_ZMSG_MEM_INSERT_FAILED;
+            rc = -PEER_ZMSG_MEM_INSERT_FAILED;
             goto clean_msg_type;
         }
     }
@@ -1721,8 +1686,8 @@ int peer_whisper_internal(peer_t *self, const char *peer, const char *internal_m
     rc = zyre_whisper(self->node, peer, &msg);
     if (rc)
     {
-        peer_errno = -PEER_ZYRE_WHISPER_FAILED;
         self->peer_errno = -PEER_ZYRE_WHISPER_FAILED;
+        rc = -PEER_ZYRE_WHISPER_FAILED;
     }
 clean_msg_type:
     return rc;
@@ -1741,37 +1706,35 @@ int peer_whisper(peer_t *self, const char *name, const char *message_type, void 
     assert(self);
     assert(self->node);
 
-    if (!_validate_name(self, name))
+    rc = _validate_name(self, name);
+    if (rc)
     {
-        return -1;
+        return rc;
     }
 
     rc = _validate_message_type(self, message_type);
-    if (!rc)
+    if (rc)
     {
-        return -1;
+        return rc;
     }
 
     char *msg_type = strdup(message_type);
     if (!msg_type)
     {
-        peer_errno = -PEER_STRDUP_FAILED;
         self->peer_errno = -PEER_STRDUP_FAILED;
-        return -1;
+        return -PEER_STRDUP_FAILED;
     }
     str_to_upper(msg_type);
 
     if (!data)
     {
-        peer_errno = -PEER_MESSAGE_PAYLOAD_NULL;
         self->peer_errno = -PEER_MESSAGE_PAYLOAD_NULL;
-        return -1;
+        return -PEER_MESSAGE_PAYLOAD_NULL;
     }
     if (data_len == 0)
     {
-        peer_errno = -PEER_MESSAGE_PAYLOAD_LENGTH_ZERO;
         self->peer_errno = -PEER_MESSAGE_PAYLOAD_LENGTH_ZERO;
-        return -1;
+        return -PEER_MESSAGE_PAYLOAD_LENGTH_ZERO;
     }
 
     const char *uuid = NULL;
@@ -1786,9 +1749,8 @@ int peer_whisper(peer_t *self, const char *name, const char *message_type, void 
     }
     if (uuid == NULL) // UUID is NULL, something is wrong!
     {
-        peer_errno = -PEER_DESTINATION_PEER_NOT_FOUND;
         self->peer_errno = -PEER_DESTINATION_PEER_NOT_FOUND;
-        return -1;
+        return -PEER_DESTINATION_PEER_NOT_FOUND;
     }
     else
     {
@@ -1814,23 +1776,23 @@ int peer_whispers(peer_t *self, const char *name, const char *message_type, cons
     assert(self);
     assert(self->node);
 
-    if (!_validate_name(self, name))
+    rc = _validate_name(self, name);
+    if (rc)
     {
-        return -1;
+        return rc;
     }
 
     rc = _validate_message_type(self, message_type);
-    if (!rc)
+    if (rc)
     {
-        return -1;
+        return rc;
     }
 
     char *msg_type = strdup(message_type);
     if (!msg_type)
     {
-        peer_errno = -PEER_STRDUP_FAILED;
         self->peer_errno = -PEER_STRDUP_FAILED;
-        return -1;
+        return -PEER_STRDUP_FAILED;
     }
     str_to_upper(msg_type);
 
@@ -1846,9 +1808,8 @@ int peer_whispers(peer_t *self, const char *name, const char *message_type, cons
     }
     if (uuid == NULL) // UUID is NULL, something is wrong!
     {
-        peer_errno = -PEER_DESTINATION_PEER_NOT_FOUND;
         self->peer_errno = -PEER_DESTINATION_PEER_NOT_FOUND;
-        return -1;
+        return -PEER_DESTINATION_PEER_NOT_FOUND;
     }
     else
     {
@@ -1862,7 +1823,7 @@ commence:
     rc = peer_whisper_internal(self, uuid, EXTERNAL_MESSAGE_STR, msg_type, string, strlen(string) + 1);
     if (rc)
     {
-        peer_errno = -PEER_ZYRE_WHISPERS_FAILED;
+        rc = -PEER_ZYRE_WHISPERS_FAILED;
         self->peer_errno = -PEER_ZYRE_WHISPERS_FAILED;
     }
     free(string);
@@ -1878,30 +1839,27 @@ int peer_shout(peer_t *self, const char *message_type, void *data, size_t data_l
     assert(self);
     assert(self->node);
 
-    if (!_validate_message_type(self, message_type))
+    if ((rc = _validate_message_type(self, message_type)))
     {
-        return -1;
+        return rc;
     }
 
     if (!data)
     {
-        peer_errno = -PEER_MESSAGE_PAYLOAD_NULL;
         self->peer_errno = -PEER_MESSAGE_PAYLOAD_NULL;
-        return -1;
+        return -PEER_MESSAGE_PAYLOAD_NULL;
     }
     if (data_len == 0)
     {
         self->peer_errno = -PEER_MESSAGE_PAYLOAD_LENGTH_ZERO;
-        peer_errno = -PEER_MESSAGE_PAYLOAD_LENGTH_ZERO;
-        return -1;
+        return -PEER_MESSAGE_PAYLOAD_LENGTH_ZERO;
     }
 
     char *msg_type = strdup(message_type);
     if (!msg_type)
     {
         self->peer_errno = -PEER_STRDUP_FAILED;
-        peer_errno = -PEER_STRDUP_FAILED;
-        return -1;
+        return -PEER_STRDUP_FAILED;
     }
     str_to_upper(msg_type);
 
@@ -1909,7 +1867,7 @@ int peer_shout(peer_t *self, const char *message_type, void *data, size_t data_l
     if (!msg)
     {
         self->peer_errno = -PEER_ZMSG_NEW_FAILED;
-        peer_errno = -PEER_ZMSG_NEW_FAILED;
+        rc = -PEER_ZMSG_NEW_FAILED;
         goto clean_msg_type;
     }
 
@@ -1917,7 +1875,7 @@ int peer_shout(peer_t *self, const char *message_type, void *data, size_t data_l
     if (rc)
     {
         self->peer_errno = -PEER_ZMSG_STR_INSERT_FAILED;
-        peer_errno = -PEER_ZMSG_STR_INSERT_FAILED;
+        rc = -PEER_ZMSG_STR_INSERT_FAILED;
         goto clean_msg_type;
     }
 
@@ -1925,7 +1883,7 @@ int peer_shout(peer_t *self, const char *message_type, void *data, size_t data_l
     if (rc)
     {
         self->peer_errno = -PEER_ZMSG_STR_INSERT_FAILED;
-        peer_errno = -PEER_ZMSG_STR_INSERT_FAILED;
+        rc = -PEER_ZMSG_STR_INSERT_FAILED;
         goto clean_msg_type;
     }
 
@@ -1933,7 +1891,7 @@ int peer_shout(peer_t *self, const char *message_type, void *data, size_t data_l
     if (rc)
     {
         self->peer_errno = -PEER_ZMSG_MEM_INSERT_FAILED;
-        peer_errno = -PEER_ZMSG_MEM_INSERT_FAILED;
+        rc = -PEER_ZMSG_MEM_INSERT_FAILED;
         goto clean_msg_type;
     }
 
@@ -1941,7 +1899,7 @@ int peer_shout(peer_t *self, const char *message_type, void *data, size_t data_l
     if (rc)
     {
         self->peer_errno = -PEER_ZYRE_SHOUT_FAILED;
-        peer_errno = -PEER_ZYRE_SHOUT_FAILED;
+        rc = -PEER_ZYRE_SHOUT_FAILED;
     }
 clean_msg_type:
     free(msg_type);
@@ -1959,37 +1917,35 @@ int peer_shouts(peer_t *self, const char *message_type, const char *format, ...)
 
     if (!format)
     {
-        peer_errno = -PEER_FORMAT_STR_IS_NULL;
         self->peer_errno = -PEER_FORMAT_STR_IS_NULL;
-        return -1;
+        return -PEER_FORMAT_STR_IS_NULL;
     }
 
-    if (!_validate_message_type(self, message_type))
+    if ((rc = _validate_message_type(self, message_type)))
     {
-        return -1;
+        return rc;
     }
 
     char *msg_type = strdup(message_type);
     if (!msg_type)
     {
-        peer_errno = -PEER_STRDUP_FAILED;
         self->peer_errno = -PEER_STRDUP_FAILED;
-        return -1;
+        return -PEER_STRDUP_FAILED;
     }
     str_to_upper(msg_type);
 
     zmsg_t *msg = zmsg_new();
     if (!msg)
     {
-        peer_errno = -PEER_ZMSG_NEW_FAILED;
         self->peer_errno = -PEER_ZMSG_NEW_FAILED;
+        rc = -PEER_ZMSG_NEW_FAILED;
         goto clean_msg_type;
     }
 
     rc = zmsg_addstr(msg, "");
     if (rc)
     {
-        peer_errno = -PEER_ZMSG_STR_INSERT_FAILED;
+        rc = -PEER_ZMSG_STR_INSERT_FAILED;
         self->peer_errno = -PEER_ZMSG_STR_INSERT_FAILED;
         goto clean_msg_type;
     }
@@ -1997,7 +1953,7 @@ int peer_shouts(peer_t *self, const char *message_type, const char *format, ...)
     rc = zmsg_addstr(msg, msg_type);
     if (rc)
     {
-        peer_errno = -PEER_ZMSG_STR_INSERT_FAILED;
+        rc = -PEER_ZMSG_STR_INSERT_FAILED;
         self->peer_errno = -PEER_ZMSG_STR_INSERT_FAILED;
         goto clean_msg_type;
     }
@@ -2009,7 +1965,7 @@ int peer_shouts(peer_t *self, const char *message_type, const char *format, ...)
     rc = peer_shout(self, msg_type, string, strlen(string) + 1);
     if (rc)
     {
-        peer_errno = -PEER_ZYRE_SHOUTS_FAILED;
+        rc = -PEER_ZYRE_SHOUTS_FAILED;
         self->peer_errno = -PEER_ZYRE_SHOUTS_FAILED;
     }
     free(string);
@@ -2027,6 +1983,8 @@ zhash_t *peer_list_connected(peer_t *self)
 
 char *peer_get_remote_address(peer_t *self, const char *name)
 {
+    int rc = -1;
+
     static char last_name[16] = {
         0x0,
     };
@@ -2039,7 +1997,7 @@ char *peer_get_remote_address(peer_t *self, const char *name)
     assert(self);
     assert(self->node);
 
-    if (!validate_name(name))
+    if (validate_name(name) < 0)
     {
         uuid = "";
     }
@@ -2055,7 +2013,7 @@ char *peer_get_remote_address(peer_t *self, const char *name)
     }
     if (uuid == NULL) // UUID is NULL, something is wrong!
     {
-        peer_errno = -PEER_DESTINATION_PEER_NOT_FOUND;
+        rc = -PEER_DESTINATION_PEER_NOT_FOUND;
         self->peer_errno = -PEER_DESTINATION_PEER_NOT_FOUND;
         uuid = "";
     }
@@ -2068,12 +2026,12 @@ commence:
     ret = zyre_peer_address(self->node, uuid);
     if (streq(ret, ""))
     {
-        peer_errno = -PEER_ZYRE_PEER_ADDRESS_NOT_FOUND;
+        rc = -PEER_ZYRE_PEER_ADDRESS_NOT_FOUND;
         self->peer_errno = -PEER_ZYRE_PEER_ADDRESS_NOT_FOUND;
     }
     else
     {
-        peer_errno = PEER_SUCCESS;
+        rc = PEER_SUCCESS;
         self->peer_errno = PEER_SUCCESS;
     }
     return ret;
@@ -2081,6 +2039,8 @@ commence:
 
 char *peer_get_remote_header_value(peer_t *self, const char *name)
 {
+    int rc = -1;
+
     static char last_name[16] = {
         0x0,
     };
@@ -2093,13 +2053,13 @@ char *peer_get_remote_header_value(peer_t *self, const char *name)
     assert(self);
     assert(self->node);
 
-    if (!validate_name(name))
+    if (validate_name(name) < 0)
         uuid = "";
 
     char *_name = strdup(name);
     if (!_name)
     {
-        peer_errno = -PEER_STRDUP_FAILED;
+        rc = -PEER_STRDUP_FAILED;
         self->peer_errno = -PEER_STRDUP_FAILED;
         uuid = "";
         _name = strdup(name);
@@ -2120,7 +2080,7 @@ char *peer_get_remote_header_value(peer_t *self, const char *name)
     }
     if (uuid == NULL) // UUID is NULL, something is wrong!
     {
-        peer_errno = -PEER_DESTINATION_PEER_NOT_FOUND;
+        rc = -PEER_DESTINATION_PEER_NOT_FOUND;
         self->peer_errno = -PEER_DESTINATION_PEER_NOT_FOUND;
         uuid = "";
     }
@@ -2133,12 +2093,12 @@ commence:
     ret = zyre_peer_header_value(self->node, uuid, _name);
     if (!ret)
     {
-        peer_errno = -PEER_ZYRE_PEER_HEADER_VALUE_FAILED;
+        rc = -PEER_ZYRE_PEER_HEADER_VALUE_FAILED;
         self->peer_errno = -PEER_ZYRE_PEER_HEADER_VALUE_FAILED;
     }
     else
     {
-        peer_errno = PEER_SUCCESS;
+        rc = PEER_SUCCESS;
         self->peer_errno = PEER_SUCCESS;
     }
     return ret;
@@ -2154,11 +2114,11 @@ void peer_print(peer_t *self)
     printf("Group name: %s\n", self->group);
     printf("Public group name: %s\n", self->group_hash);
     printf("Connected peers: ");
-    char *name = zhash_first(self->available_peers);
+    char *name = (char *)zhash_first(self->available_peers);
     while (name)
     {
         printf("%s, ", name);
-        name = zhash_next(self->available_peers);
+        name = (char *)zhash_next(self->available_peers);
     }
     printf("\n");
     printf("\n");
@@ -2209,9 +2169,8 @@ int peer_get_receiver_messages(peer_t *self, int timeout_ms)
     poller = zpoller_new(self->receiver, NULL);
     if (!poller)
     {
-        peer_errno = -PEER_COULD_NOT_CREATE_ZPOLLER;
         self->peer_errno = -PEER_COULD_NOT_CREATE_ZPOLLER;
-        return -1;
+        return -PEER_COULD_NOT_CREATE_ZPOLLER;
     }
     void *which = zpoller_wait(poller, timeout_ms);
     if (which == self->receiver)
@@ -2230,8 +2189,7 @@ int peer_get_receiver_messages(peer_t *self, int timeout_ms)
         if (zpoller_expired(poller))
         {
             zsys_error("%s> Authentication poller expired.");
-            rc = -1;
-            peer_errno = -PEER_ZPOLLER_TIMED_OUT;
+            rc = -PEER_ZPOLLER_TIMED_OUT;
             self->peer_errno = -PEER_ZPOLLER_TIMED_OUT;
         }
         else if (zpoller_terminated(poller))
@@ -2240,7 +2198,7 @@ int peer_get_receiver_messages(peer_t *self, int timeout_ms)
             assert(false);
         }
     }
-    peer_errno = PEER_SUCCESS;
+    rc = PEER_SUCCESS;
     self->peer_errno = PEER_SUCCESS;
     zpoller_destroy(&poller);
     return rc;
@@ -2256,14 +2214,14 @@ int peer_start(peer_t *self)
     self->receiver = zactor_new(receiver_actor, self);
     if (!self->callback_driver)
     {
-        peer_errno = -PEER_RECEIVER_FAILED;
+        rc = -PEER_RECEIVER_FAILED;
         self->peer_errno = -PEER_RECEIVER_FAILED;
         goto errored;
     }
 
     if (zsock_wait(self->receiver))
     {
-        peer_errno = -PEER_RECEIVER_FAILED;
+        rc = -PEER_RECEIVER_FAILED;
         self->peer_errno = -PEER_RECEIVER_FAILED;
         goto errored_destroy;
     }
@@ -2283,16 +2241,14 @@ int peer_start(peer_t *self)
         if (status == -PEER_EXISTS)
         {
             zsys_error("Peer name %s already exists, exiting...", self->name);
-            rc = -1;
-            peer_errno = -PEER_EXISTS;
+            rc = -PEER_EXISTS;
             self->peer_errno = -PEER_EXISTS;
             goto errored_zpoller_destroy;
         }
         else if (status == -PEER_AUTH_FAILED)
         {
             zsys_error("%s> Authentication rejected!", self->name);
-            rc = -1;
-            peer_errno = -PEER_AUTH_FAILED;
+            rc = -PEER_AUTH_FAILED;
             self->peer_errno = -PEER_AUTH_FAILED;
             goto errored_zpoller_destroy;
         }
@@ -2310,8 +2266,7 @@ int peer_start(peer_t *self)
         if (zpoller_expired(poller))
         {
             zsys_error("%s> Authentication poller expired.");
-            rc = -1;
-            peer_errno = -PEER_AUTH_REQUEST_TIMEDOOUT;
+            rc = -PEER_AUTH_REQUEST_TIMEDOOUT;
             self->peer_errno = -PEER_AUTH_REQUEST_TIMEDOOUT;
             goto errored_zpoller_destroy;
         }
@@ -2322,7 +2277,7 @@ int peer_start(peer_t *self)
         }
     }
     self->started = true;
-    peer_errno = PEER_SUCCESS;
+    rc = PEER_SUCCESS;
     self->peer_errno = PEER_SUCCESS;
     zpoller_destroy(&poller);
     return rc;
@@ -2360,35 +2315,34 @@ int peer_on_message(peer_t *self, const char *name, const char *message_type, pe
         0x0,
     };
 
-    if (!validate_name(name))
+    if ((rc = validate_name(name)) < 0)
     {
-        return -1;
+        return rc;
     }
 
-    if (!validate_message_type(message_type))
+    if ((rc = validate_message_type(message_type)) < 0)
     {
-        return -1;
+        return rc;
     }
 
     char *_name = strdup(name);
     if (!_name)
     {
-        peer_errno = -PEER_STRDUP_FAILED;
-        return -1;
+       return -PEER_STRDUP_FAILED;
     }
     str_to_upper(_name);
 
     char *_msg_type = strdup(message_type);
     if (!_msg_type)
     {
-        peer_errno = -PEER_STRDUP_FAILED;
+        rc = -PEER_STRDUP_FAILED;
         goto cleanup_name;
     }
     str_to_upper(_msg_type);
     int len = snprintf(hash_name, sizeof(hash_name), "%s.%s", _msg_type, _name);
     if (len != strlen(_msg_type) + strlen(_name) + 1)
     {
-        peer_errno = -PEER_STRCONCAT_FAILED;
+        rc = -PEER_STRCONCAT_FAILED;
         goto cleanup_msg_type;
     }
 
@@ -2397,16 +2351,16 @@ int peer_on_message(peer_t *self, const char *name, const char *message_type, pe
 
     if ((rc = zhash_insert(self->on_message_cbs, hash_name, callback)))
     {
-        peer_errno = -PEER_CALLBACK_INSERTION_FAILED;
+        rc = -PEER_CALLBACK_INSERTION_FAILED;
         goto cleanup_msg_type;
     }
     if ((rc = zhash_insert(self->on_message_cb_args, hash_name, local_args)))
     {
         zhash_delete(self->on_message_cbs, hash_name);
-        peer_errno = -PEER_CALLBACK_LOCALARG_INSERTION_FAILED;
+        rc = -PEER_CALLBACK_LOCALARG_INSERTION_FAILED;
         goto cleanup_msg_type;
     }
-    peer_errno = PEER_SUCCESS;
+    rc = PEER_SUCCESS;
 cleanup_msg_type:
     destroy_ptr(_msg_type);
 cleanup_name:
@@ -2427,50 +2381,47 @@ int peer_disable_on_message(peer_t *self, const char *name, const char *message_
         0x0,
     };
 
-    if (!validate_name(name))
+    if ((rc = validate_name(name)) < 0)
     {
-        return -1;
+        return rc;
     }
 
-    if (!validate_message_type(message_type))
+    if ((rc = validate_message_type(message_type)) < 0)
     {
-        return -1;
+        return rc;
     }
 
     char *_name = strdup(name);
     if (!_name)
     {
-        peer_errno = -PEER_STRDUP_FAILED;
-        return -1;
+        return -PEER_STRDUP_FAILED;
     }
     str_to_upper(_name);
 
     char *_msg_type = strdup(message_type);
     if (!_msg_type)
     {
-        peer_errno = -PEER_STRDUP_FAILED;
-        goto cleanup_name;
+        return -PEER_STRDUP_FAILED;
     }
     str_to_upper(_msg_type);
 
     int len = snprintf(hash_name, sizeof(hash_name), "%s.%s", _msg_type, _name);
     if (len != strlen(_msg_type) + strlen(_name) + 1) // should this be an assert?
     {
-        peer_errno = -PEER_STRCONCAT_FAILED;
+        rc = -PEER_STRCONCAT_FAILED;
         goto cleanup_msg_type;
     }
 
     // 1. Check if message type at all registered
     if (!zhash_exists(self->on_connect_cbs, hash_name))
     {
-        peer_errno = -PEER_MESSAGE_TYPE_NOT_REGISTERED;
+        rc = -PEER_MESSAGE_TYPE_NOT_REGISTERED;
         goto cleanup_msg_type;
     }
 
     zhash_delete(self->on_connect_cbs, hash_name);
     zhash_delete(self->on_connect_cb_args, hash_name);
-    peer_errno = PEER_SUCCESS;
-    rc = 0;
+    rc = PEER_SUCCESS;
 cleanup_msg_type:
     destroy_ptr(_msg_type);
 cleanup_name:
@@ -2491,16 +2442,15 @@ int peer_on_connect(peer_t *self, const char *peer, peer_callback_t _Nullable ca
 
     if (peer) // non-NULL
     {
-        if (!validate_name(peer))
+        if ((rc = validate_name(peer)) < 0)
         {
-            return -1;
+            return rc;
         }
 
         _name = strdup(peer);
         if (!_name)
         {
-            peer_errno = -PEER_STRDUP_FAILED;
-            return -1;
+            return -PEER_STRDUP_FAILED;
         }
         str_to_upper(_name);
     }
@@ -2508,8 +2458,7 @@ int peer_on_connect(peer_t *self, const char *peer, peer_callback_t _Nullable ca
     {
         self->all_on_connect_cb = callback;
         self->all_on_connect_cb_args = local_args;
-        peer_errno = PEER_SUCCESS;
-        rc = 0;
+        rc = PEER_SUCCESS;
         goto cleanup_name;
     }
     assert(_name);
@@ -2522,17 +2471,17 @@ int peer_on_connect(peer_t *self, const char *peer, peer_callback_t _Nullable ca
 
     if ((rc = zhash_insert(self->on_connect_cbs, _name, callback)))
     {
-        peer_errno = -PEER_CALLBACK_INSERTION_FAILED;
+        rc = -PEER_CALLBACK_INSERTION_FAILED;
         goto cleanup_name;
     }
 
     if ((rc = zhash_insert(self->on_connect_cb_args, _name, local_args)))
     {
-        peer_errno = -PEER_CALLBACK_LOCALARG_INSERTION_FAILED;
+        rc = -PEER_CALLBACK_LOCALARG_INSERTION_FAILED;
         zhash_delete(self->on_connect_cbs, _name);
         goto cleanup_name;
     }
-    peer_errno = PEER_SUCCESS;
+    rc = PEER_SUCCESS;
 cleanup_name:
     destroy_ptr(_name);
     return rc;
@@ -2551,16 +2500,16 @@ int peer_disable_on_connect(peer_t *self, const char *peer)
 
     if (peer) // non-NULL
     {
-        if (!validate_name(peer))
+        if ((rc = validate_name(peer)) < 0)
         {
-            return -1;
+            return rc;
         }
 
         _name = strdup(peer);
         if (!_name)
         {
-            peer_errno = -PEER_STRDUP_FAILED;
-            return -1;
+            return -PEER_STRDUP_FAILED;
+            // return -1;
         }
         str_to_upper(_name);
     }
@@ -2568,8 +2517,7 @@ int peer_disable_on_connect(peer_t *self, const char *peer)
     {
         self->all_on_connect_cb = NULL;
         self->all_on_connect_cb_args = NULL;
-        peer_errno = PEER_SUCCESS;
-        rc = 0;
+        rc = PEER_SUCCESS;
         goto cleanup_name;
     }
     assert(_name);
@@ -2578,13 +2526,11 @@ int peer_disable_on_connect(peer_t *self, const char *peer)
     {
         zhash_delete(self->on_connect_cbs, _name);
         zhash_delete(self->on_connect_cb_args, _name);
-        peer_errno = PEER_SUCCESS;
-        rc = 0;
+        rc = PEER_SUCCESS;
     }
     else
     {
-        peer_errno = -PEER_CALLBACK_DOES_NOT_EXIST;
-        rc = -1;
+        rc = -PEER_CALLBACK_DOES_NOT_EXIST;
     }
 cleanup_name:
     destroy_ptr(_name);
@@ -2604,16 +2550,15 @@ int peer_on_disconnect(peer_t *self, const char *peer, peer_callback_t _Nullable
 
     if (peer) // non-NULL
     {
-        if (!validate_name(peer))
+        if ((rc = validate_name(peer)) < 0)
         {
-            return -1;
+            return rc;
         }
 
         _name = strdup(peer);
         if (!_name)
         {
-            peer_errno = -PEER_STRDUP_FAILED;
-            return -1;
+            return -PEER_STRDUP_FAILED;
         }
         str_to_upper(_name);
     }
@@ -2621,8 +2566,7 @@ int peer_on_disconnect(peer_t *self, const char *peer, peer_callback_t _Nullable
     {
         self->all_on_disconnect_cb = callback;
         self->all_on_disconnect_cb_args = local_args;
-        peer_errno = PEER_SUCCESS;
-        rc = 0;
+        rc = PEER_SUCCESS;
         goto cleanup_name;
     }
     assert(_name);
@@ -2635,17 +2579,17 @@ int peer_on_disconnect(peer_t *self, const char *peer, peer_callback_t _Nullable
 
     if ((rc = zhash_insert(self->on_exit_cbs, _name, callback)))
     {
-        peer_errno = -PEER_CALLBACK_INSERTION_FAILED;
+        rc = -PEER_CALLBACK_INSERTION_FAILED;
         goto cleanup_name;
     }
 
     if ((rc = zhash_insert(self->on_exit_cb_args, _name, local_args)))
     {
-        peer_errno = -PEER_CALLBACK_LOCALARG_INSERTION_FAILED;
+        rc = -PEER_CALLBACK_LOCALARG_INSERTION_FAILED;
         zhash_delete(self->on_exit_cbs, _name);
         goto cleanup_name;
     }
-    peer_errno = PEER_SUCCESS;
+    rc = PEER_SUCCESS;
 cleanup_name:
     destroy_ptr(_name);
     return rc;
@@ -2664,16 +2608,15 @@ int peer_disable_on_disconnect(peer_t *self, const char *peer)
 
     if (peer) // non-NULL
     {
-        if (!validate_name(peer))
+        if ((rc = validate_name(peer)) < 0)
         {
-            return -1;
+            return rc;
         }
 
         _name = strdup(peer);
         if (!_name)
         {
-            peer_errno = -PEER_STRDUP_FAILED;
-            return -1;
+            return -PEER_STRDUP_FAILED;
         }
         str_to_upper(_name);
     }
@@ -2681,8 +2624,7 @@ int peer_disable_on_disconnect(peer_t *self, const char *peer)
     {
         self->all_on_disconnect_cb = NULL;
         self->all_on_disconnect_cb_args = NULL;
-        peer_errno = PEER_SUCCESS;
-        rc = 0;
+        rc = PEER_SUCCESS;
         goto cleanup_name;
     }
     assert(_name);
@@ -2691,13 +2633,11 @@ int peer_disable_on_disconnect(peer_t *self, const char *peer)
     {
         zhash_delete(self->on_exit_cbs, _name);
         zhash_delete(self->on_exit_cb_args, _name);
-        peer_errno = PEER_SUCCESS;
-        rc = 0;
+        rc = PEER_SUCCESS;
     }
     else
     {
-        peer_errno = -PEER_CALLBACK_DOES_NOT_EXIST;
-        rc = -1;
+        rc = -PEER_CALLBACK_DOES_NOT_EXIST;
     }
 cleanup_name:
     destroy_ptr(_name);
@@ -2717,16 +2657,16 @@ int peer_on_evasive(peer_t *self, const char *peer, peer_callback_t callback, vo
 
     if (peer) // non-NULL
     {
-        if (!validate_name(peer))
+        if ((rc = validate_name(peer)) < 0)
         {
-            return -1;
+            return rc;
         }
 
         _name = strdup(peer);
         if (!_name)
         {
-            peer_errno = -PEER_STRDUP_FAILED;
-            return -1;
+            return -PEER_STRDUP_FAILED;
+            // return -1;
         }
         str_to_upper(_name);
     }
@@ -2744,17 +2684,17 @@ int peer_on_evasive(peer_t *self, const char *peer, peer_callback_t callback, vo
 
     if ((rc = zhash_insert(self->on_evasive_cbs, _name, callback)))
     {
-        peer_errno = -PEER_CALLBACK_INSERTION_FAILED;
+        rc = -PEER_CALLBACK_INSERTION_FAILED;
         goto cleanup_name;
     }
 
     if ((rc = zhash_insert(self->on_evasive_cb_args, _name, local_args)))
     {
-        peer_errno = -PEER_CALLBACK_LOCALARG_INSERTION_FAILED;
+        rc = -PEER_CALLBACK_LOCALARG_INSERTION_FAILED;
         zhash_delete(self->on_evasive_cbs, _name);
         goto cleanup_name;
     }
-    peer_errno = PEER_SUCCESS;
+    rc = PEER_SUCCESS;
 cleanup_name:
     destroy_ptr(_name);
     return rc;
@@ -2773,16 +2713,15 @@ int peer_disable_on_evasive(peer_t *self, const char *peer)
 
     if (peer) // non-NULL
     {
-        if (!validate_name(peer))
+        if ((rc = validate_name(peer)) < 0)
         {
-            return -1;
+            return rc;
         }
 
         _name = strdup(peer);
         if (!_name)
         {
-            peer_errno = -PEER_STRDUP_FAILED;
-            return -1;
+            return -PEER_STRDUP_FAILED;
         }
         str_to_upper(_name);
     }
@@ -2796,13 +2735,11 @@ int peer_disable_on_evasive(peer_t *self, const char *peer)
     {
         zhash_delete(self->on_evasive_cbs, _name);
         zhash_delete(self->on_evasive_cb_args, _name);
-        peer_errno = PEER_SUCCESS;
-        rc = 0;
+        rc = PEER_SUCCESS;
     }
     else
     {
-        peer_errno = -PEER_CALLBACK_DOES_NOT_EXIST;
-        rc = -1;
+        rc = -PEER_CALLBACK_DOES_NOT_EXIST;
     }
 cleanup_name:
     destroy_ptr(_name);
@@ -2822,16 +2759,15 @@ int peer_on_silent(peer_t *self, const char *peer, peer_callback_t callback, voi
 
     if (peer) // non-NULL
     {
-        if (!validate_name(peer))
+        if ((rc = validate_name(peer)) < 0)
         {
-            return -1;
+            return rc;
         }
 
         _name = strdup(peer);
         if (!_name)
         {
-            peer_errno = -PEER_STRDUP_FAILED;
-            return -1;
+            return -PEER_STRDUP_FAILED;
         }
         str_to_upper(_name);
     }
@@ -2849,17 +2785,17 @@ int peer_on_silent(peer_t *self, const char *peer, peer_callback_t callback, voi
 
     if ((rc = zhash_insert(self->on_silent_cbs, _name, callback)))
     {
-        peer_errno = -PEER_CALLBACK_INSERTION_FAILED;
+        rc = -PEER_CALLBACK_INSERTION_FAILED;
         goto cleanup_name;
     }
 
     if ((rc = zhash_insert(self->on_silent_cb_args, _name, local_args)))
     {
-        peer_errno = -PEER_CALLBACK_LOCALARG_INSERTION_FAILED;
+        rc = -PEER_CALLBACK_LOCALARG_INSERTION_FAILED;
         zhash_delete(self->on_silent_cbs, _name);
         goto cleanup_name;
     }
-    peer_errno = PEER_SUCCESS;
+    rc = PEER_SUCCESS;
 cleanup_name:
     destroy_ptr(_name);
     return rc;
@@ -2878,16 +2814,15 @@ int peer_disable_on_silent(peer_t *self, const char *peer)
 
     if (peer) // non-NULL
     {
-        if (!validate_name(peer))
+        if ((rc = validate_name(peer)) < 0)
         {
-            return -1;
+            return rc;
         }
 
         _name = strdup(peer);
         if (!_name)
         {
-            peer_errno = -PEER_STRDUP_FAILED;
-            return -1;
+            return -PEER_STRDUP_FAILED;
         }
         str_to_upper(_name);
     }
@@ -2901,13 +2836,11 @@ int peer_disable_on_silent(peer_t *self, const char *peer)
     {
         zhash_delete(self->on_silent_cbs, _name);
         zhash_delete(self->on_silent_cb_args, _name);
-        peer_errno = PEER_SUCCESS;
-        rc = 0;
+        rc = PEER_SUCCESS;
     }
     else
     {
-        peer_errno = -PEER_CALLBACK_DOES_NOT_EXIST;
-        rc = -1;
+        rc = -PEER_CALLBACK_DOES_NOT_EXIST;
     }
 cleanup_name:
     destroy_ptr(_name);
@@ -2926,7 +2859,7 @@ char *peer_py_list_connected(peer_t *self)
     zhash_t *hash = zhash_dup(peer_list_connected(self));
     char *out = NULL;
     char *uuid = NULL;
-    for (uuid = zhash_first(hash); uuid; uuid = zhash_next(hash))
+    for (uuid = (char *)zhash_first(hash); uuid; uuid = (char *)zhash_next(hash))
     {
         if (out)
         {
@@ -2953,29 +2886,28 @@ int peer_py_on_message(peer_t *self, const char *name, const char *message_type,
         0x0,
     };
 
-    if (!_validate_name(self, name))
+    if ((rc = _validate_name(self, name)) < 0)
     {
-        return -1;
+        return rc;
     }
 
-    if (!_validate_message_type(self, message_type))
+    if ((rc = _validate_message_type(self, message_type)) < 0)
     {
-        return -1;
+        return rc;
     }
 
     char *_name = strdup(name);
     if (!_name)
     {
-        peer_errno = -PEER_STRDUP_FAILED;
         self->peer_errno = -PEER_STRDUP_FAILED;
-        return -1;
+        return -PEER_STRDUP_FAILED;
     }
     str_to_upper(_name);
 
     char *_msg_type = strdup(message_type);
     if (!_msg_type)
     {
-        peer_errno = -PEER_STRDUP_FAILED;
+        rc = -PEER_STRDUP_FAILED;
         self->peer_errno = -PEER_STRDUP_FAILED;
         goto cleanup_name;
     }
@@ -2983,7 +2915,7 @@ int peer_py_on_message(peer_t *self, const char *name, const char *message_type,
     int len = snprintf(hash_name, sizeof(hash_name), "%s.%s", _msg_type, _name);
     if (len != strlen(_msg_type) + strlen(_name) + 1)
     {
-        peer_errno = -PEER_STRCONCAT_FAILED;
+        rc = -PEER_STRCONCAT_FAILED;
         self->peer_errno = -PEER_STRCONCAT_FAILED;
         goto cleanup_msg_type;
     }
@@ -2992,11 +2924,11 @@ int peer_py_on_message(peer_t *self, const char *name, const char *message_type,
 
     if ((rc = zhash_insert(self->py_on_message_cbs, hash_name, callback)))
     {
-        peer_errno = -PEER_CALLBACK_INSERTION_FAILED;
+        rc = -PEER_CALLBACK_INSERTION_FAILED;
         self->peer_errno = -PEER_CALLBACK_INSERTION_FAILED;
         goto cleanup_msg_type;
     }
-    peer_errno = PEER_SUCCESS;
+    rc = PEER_SUCCESS;
     self->peer_errno = PEER_SUCCESS;
 cleanup_msg_type:
     destroy_ptr(_msg_type);
@@ -3017,29 +2949,28 @@ int peer_py_disable_on_message(peer_t *self, const char *name, const char *messa
         0x0,
     };
 
-    if (!_validate_name(self, name))
+    if ((rc = _validate_name(self, name)) < 0)
     {
-        return -1;
+        return rc;
     }
 
-    if (!_validate_message_type(self, message_type))
+    if ((rc = _validate_message_type(self, message_type)) < 0)
     {
-        return -1;
+        return rc;
     }
 
     char *_name = strdup(name);
     if (!_name)
     {
-        peer_errno = -PEER_STRDUP_FAILED;
         self->peer_errno = -PEER_STRDUP_FAILED;
-        return -1;
+        return -PEER_STRDUP_FAILED;
     }
     str_to_upper(_name);
 
     char *_msg_type = strdup(message_type);
     if (!_msg_type)
     {
-        peer_errno = -PEER_STRDUP_FAILED;
+        rc = -PEER_STRDUP_FAILED;
         self->peer_errno = -PEER_STRDUP_FAILED;
         goto cleanup_name;
     }
@@ -3048,7 +2979,7 @@ int peer_py_disable_on_message(peer_t *self, const char *name, const char *messa
     int len = snprintf(hash_name, sizeof(hash_name), "%s.%s", _msg_type, _name);
     if (len != strlen(_msg_type) + strlen(_name) + 1) // should this be an assert?
     {
-        peer_errno = -PEER_STRCONCAT_FAILED;
+        rc = -PEER_STRCONCAT_FAILED;
         self->peer_errno = -PEER_STRCONCAT_FAILED;
         goto cleanup_msg_type;
     }
@@ -3056,15 +2987,14 @@ int peer_py_disable_on_message(peer_t *self, const char *name, const char *messa
     // 1. Check if message type at all registered
     if (!zhash_exists(self->py_on_connect_cbs, hash_name))
     {
-        peer_errno = -PEER_MESSAGE_TYPE_NOT_REGISTERED;
+        rc = -PEER_MESSAGE_TYPE_NOT_REGISTERED;
         self->peer_errno = -PEER_MESSAGE_TYPE_NOT_REGISTERED;
         goto cleanup_msg_type;
     }
 
     zhash_delete(self->py_on_connect_cbs, hash_name);
-    peer_errno = PEER_SUCCESS;
+    rc = PEER_SUCCESS;
     self->peer_errno = PEER_SUCCESS;
-    rc = 0;
 cleanup_msg_type:
     destroy_ptr(_msg_type);
 cleanup_name:
@@ -3084,17 +3014,16 @@ int peer_py_on_connect(peer_t *self, const char *peer, peer_py_callback_t _Nulla
 
     if (peer) // non-NULL
     {
-        if (!_validate_name(self, peer))
+        if ((rc = _validate_name(self, peer)) < 0)
         {
-            return -1;
+            return rc;
         }
 
         _name = strdup(peer);
         if (!_name)
         {
-            peer_errno = -PEER_STRDUP_FAILED;
             self->peer_errno = -PEER_STRDUP_FAILED;
-            return -1;
+            return -PEER_STRDUP_FAILED;
         }
         str_to_upper(_name);
     }
@@ -3105,9 +3034,8 @@ int peer_py_on_connect(peer_t *self, const char *peer, peer_py_callback_t _Nulla
         {
             zsys_info("%s> Peer on connect registered: ALL, %p | %p", self->name, callback, self->py_all_on_connect_cb);
         }
-        peer_errno = PEER_SUCCESS;
+        rc = PEER_SUCCESS;
         self->peer_errno = PEER_SUCCESS;
-        rc = 0;
         goto cleanup_name;
     }
     assert(_name);
@@ -3119,7 +3047,7 @@ int peer_py_on_connect(peer_t *self, const char *peer, peer_py_callback_t _Nulla
 
     if ((rc = zhash_insert(self->py_on_connect_cbs, _name, callback)))
     {
-        peer_errno = -PEER_CALLBACK_INSERTION_FAILED;
+        rc = -PEER_CALLBACK_INSERTION_FAILED;
         self->peer_errno = -PEER_CALLBACK_INSERTION_FAILED;
         goto cleanup_name;
     }
@@ -3131,7 +3059,7 @@ int peer_py_on_connect(peer_t *self, const char *peer, peer_py_callback_t _Nulla
         zsys_info("%s> Peer on connect registered: %s (%s), %p | %p", self->name, peer, _name, callback, zhash_lookup(self->py_on_connect_cbs, _name));
     }
 
-    peer_errno = PEER_SUCCESS;
+    rc = PEER_SUCCESS;
     self->peer_errno = PEER_SUCCESS;
 cleanup_name:
     destroy_ptr(_name);
@@ -3150,26 +3078,24 @@ int peer_py_disable_on_connect(peer_t *self, const char *peer)
 
     if (peer) // non-NULL
     {
-        if (!_validate_name(self, peer))
+        if ((rc = _validate_name(self, peer)) < 0)
         {
-            return -1;
+            return rc;
         }
 
         _name = strdup(peer);
         if (!_name)
         {
-            peer_errno = -PEER_STRDUP_FAILED;
             self->peer_errno = -PEER_STRDUP_FAILED;
-            return -1;
+            return -PEER_STRDUP_FAILED;
         }
         str_to_upper(_name);
     }
     else
     {
         self->py_all_on_connect_cb = NULL;
-        peer_errno = PEER_SUCCESS;
+        rc = PEER_SUCCESS;
         self->peer_errno = PEER_SUCCESS;
-        rc = 0;
         goto cleanup_name;
     }
     assert(_name);
@@ -3177,15 +3103,13 @@ int peer_py_disable_on_connect(peer_t *self, const char *peer)
     if (zhash_exists(self->py_on_connect_cbs, _name)) // already exists
     {
         zhash_delete(self->py_on_connect_cbs, _name);
-        peer_errno = PEER_SUCCESS;
+        rc = PEER_SUCCESS;
         self->peer_errno = PEER_SUCCESS;
-        rc = 0;
     }
     else
     {
-        peer_errno = -PEER_CALLBACK_DOES_NOT_EXIST;
+        rc = -PEER_CALLBACK_DOES_NOT_EXIST;
         self->peer_errno = -PEER_CALLBACK_DOES_NOT_EXIST;
-        rc = -1;
     }
 cleanup_name:
     destroy_ptr(_name);
@@ -3204,26 +3128,24 @@ int peer_py_on_disconnect(peer_t *self, const char *peer, peer_py_callback_t _Nu
 
     if (peer) // non-NULL
     {
-        if (!_validate_name(self, peer))
+        if ((rc = _validate_name(self, peer)) < 0)
         {
-            return -1;
+            return rc;
         }
 
         _name = strdup(peer);
         if (!_name)
         {
-            peer_errno = -PEER_STRDUP_FAILED;
             self->peer_errno = -PEER_STRDUP_FAILED;
-            return -1;
+            return -PEER_STRDUP_FAILED;
         }
         str_to_upper(_name);
     }
     else
     {
         self->py_all_on_exit_cb = callback;
-        peer_errno = PEER_SUCCESS;
+        rc = PEER_SUCCESS;
         self->peer_errno = PEER_SUCCESS;
-        rc = 0;
         goto cleanup_name;
     }
     assert(_name);
@@ -3235,12 +3157,12 @@ int peer_py_on_disconnect(peer_t *self, const char *peer, peer_py_callback_t _Nu
 
     if ((rc = zhash_insert(self->py_on_exit_cbs, _name, callback)))
     {
-        peer_errno = -PEER_CALLBACK_INSERTION_FAILED;
+        rc = -PEER_CALLBACK_INSERTION_FAILED;
         self->peer_errno = -PEER_CALLBACK_INSERTION_FAILED;
         goto cleanup_name;
     }
 
-    peer_errno = PEER_SUCCESS;
+    rc = PEER_SUCCESS;
     self->peer_errno = PEER_SUCCESS;
 cleanup_name:
     destroy_ptr(_name);
@@ -3259,26 +3181,24 @@ int peer_py_disable_on_disconnect(peer_t *self, const char *peer)
 
     if (peer) // non-NULL
     {
-        if (!_validate_name(self, peer))
+        if ((rc = _validate_name(self, peer)) < 0)
         {
-            return -1;
+            return rc;
         }
 
         _name = strdup(peer);
         if (!_name)
         {
-            peer_errno = -PEER_STRDUP_FAILED;
             self->peer_errno = -PEER_STRDUP_FAILED;
-            return -1;
+            return -PEER_STRDUP_FAILED;
         }
         str_to_upper(_name);
     }
     else
     {
         self->py_all_on_exit_cb = NULL;
-        peer_errno = PEER_SUCCESS;
+        rc = PEER_SUCCESS;
         self->peer_errno = PEER_SUCCESS;
-        rc = 0;
         goto cleanup_name;
     }
     assert(_name);
@@ -3286,15 +3206,13 @@ int peer_py_disable_on_disconnect(peer_t *self, const char *peer)
     if (zhash_exists(self->py_on_exit_cbs, _name)) // already exists
     {
         zhash_delete(self->py_on_exit_cbs, _name);
-        peer_errno = PEER_SUCCESS;
+        rc = PEER_SUCCESS;
         self->peer_errno = PEER_SUCCESS;
-        rc = 0;
     }
     else
     {
-        peer_errno = -PEER_CALLBACK_DOES_NOT_EXIST;
+        rc = -PEER_CALLBACK_DOES_NOT_EXIST;
         self->peer_errno = -PEER_CALLBACK_DOES_NOT_EXIST;
-        rc = -1;
     }
 cleanup_name:
     destroy_ptr(_name);
@@ -3313,17 +3231,16 @@ int peer_py_on_evasive(peer_t *self, const char *peer, peer_py_callback_t callba
 
     if (peer) // non-NULL
     {
-        if (!_validate_name(self, peer))
+        if ((rc = _validate_name(self, peer)) < 0)
         {
-            return -1;
+            return rc;
         }
 
         _name = strdup(peer);
         if (!_name)
         {
-            peer_errno = -PEER_STRDUP_FAILED;
             self->peer_errno = -PEER_STRDUP_FAILED;
-            return -1;
+            return -PEER_STRDUP_FAILED;
         }
         str_to_upper(_name);
     }
@@ -3340,12 +3257,12 @@ int peer_py_on_evasive(peer_t *self, const char *peer, peer_py_callback_t callba
 
     if ((rc = zhash_insert(self->py_on_evasive_cbs, _name, callback)))
     {
-        peer_errno = -PEER_CALLBACK_INSERTION_FAILED;
+        rc = -PEER_CALLBACK_INSERTION_FAILED;
         self->peer_errno = -PEER_CALLBACK_INSERTION_FAILED;
         goto cleanup_name;
     }
 
-    peer_errno = PEER_SUCCESS;
+    rc = PEER_SUCCESS;
 cleanup_name:
     destroy_ptr(_name);
     return rc;
@@ -3363,17 +3280,16 @@ int peer_py_disable_on_evasive(peer_t *self, const char *peer)
 
     if (peer) // non-NULL
     {
-        if (!_validate_name(self, peer))
+        if ((rc = _validate_name(self, peer)) < 0)
         {
-            return -1;
+            return rc;
         }
 
         _name = strdup(peer);
         if (!_name)
         {
-            peer_errno = -PEER_STRDUP_FAILED;
             self->peer_errno = -PEER_STRDUP_FAILED;
-            return -1;
+            return -PEER_STRDUP_FAILED;
         }
         str_to_upper(_name);
     }
@@ -3386,13 +3302,11 @@ int peer_py_disable_on_evasive(peer_t *self, const char *peer)
     if (zhash_exists(self->py_on_evasive_cbs, _name)) // already exists
     {
         zhash_delete(self->py_on_evasive_cbs, _name);
-        peer_errno = PEER_SUCCESS;
-        rc = 0;
+        rc = PEER_SUCCESS;
     }
     else
     {
-        peer_errno = -PEER_CALLBACK_DOES_NOT_EXIST;
-        rc = -1;
+        rc = -PEER_CALLBACK_DOES_NOT_EXIST;
     }
 cleanup_name:
     destroy_ptr(_name);
@@ -3411,17 +3325,16 @@ int peer_py_on_silent(peer_t *self, const char *peer, peer_py_callback_t callbac
 
     if (peer) // non-NULL
     {
-        if (!_validate_name(self, peer))
+        if ((rc = _validate_name(self, peer)) < 0)
         {
-            return -1;
+            return rc;
         }
 
         _name = strdup(peer);
         if (!_name)
         {
-            peer_errno = -PEER_STRDUP_FAILED;
             self->peer_errno = -PEER_STRDUP_FAILED;
-            return -1;
+            return -PEER_STRDUP_FAILED;
         }
         str_to_upper(_name);
     }
@@ -3438,12 +3351,12 @@ int peer_py_on_silent(peer_t *self, const char *peer, peer_py_callback_t callbac
 
     if ((rc = zhash_insert(self->py_on_silent_cbs, _name, callback)))
     {
-        peer_errno = -PEER_CALLBACK_INSERTION_FAILED;
+        rc = -PEER_CALLBACK_INSERTION_FAILED;
         self->peer_errno = -PEER_CALLBACK_INSERTION_FAILED;
         goto cleanup_name;
     }
 
-    peer_errno = PEER_SUCCESS;
+    rc = PEER_SUCCESS;
 cleanup_name:
     destroy_ptr(_name);
     return rc;
@@ -3461,17 +3374,16 @@ int peer_py_disable_on_silent(peer_t *self, const char *peer)
 
     if (peer) // non-NULL
     {
-        if (!_validate_name(self, peer))
+        if ((rc = _validate_name(self, peer)) < 0)
         {
-            return -1;
+            return rc;
         }
 
         _name = strdup(peer);
         if (!_name)
         {
-            peer_errno = -PEER_STRDUP_FAILED;
             self->peer_errno = -PEER_STRDUP_FAILED;
-            return -1;
+            return -PEER_STRDUP_FAILED;
         }
         str_to_upper(_name);
     }
@@ -3484,13 +3396,11 @@ int peer_py_disable_on_silent(peer_t *self, const char *peer)
     if (zhash_exists(self->py_on_silent_cbs, _name)) // already exists
     {
         zhash_delete(self->py_on_silent_cbs, _name);
-        peer_errno = PEER_SUCCESS;
-        rc = 0;
+        rc = PEER_SUCCESS;
     }
     else
     {
-        peer_errno = -PEER_CALLBACK_DOES_NOT_EXIST;
-        rc = -1;
+        rc = -PEER_CALLBACK_DOES_NOT_EXIST;
     }
 cleanup_name:
     destroy_ptr(_name);
@@ -3542,7 +3452,8 @@ void peer_test(bool verbose)
     }
     if (peer_on_connect(peer_a, peer_name(peer_b), &__peernet_on_connect_demo, NULL))
     {
-        printf("Error: %s (%d)\n", peer_strerror(peer_errno), peer_errno);
+        // printf("Error: %s (%d)\n", peer_strerror(peer_errno), peer_errno);
+        printf("Error: %s (%d)\n", "PEER_ERRNO DEPRECATED", 0);
     }
     assert(!peer_on_disconnect(peer_b, peer_name(peer_a), &__peernet_on_exit_demo, NULL));
     assert(!peer_on_message(peer_a, peer_name(peer_b), "CHAT", &__peernet_on_message_demo, NULL));

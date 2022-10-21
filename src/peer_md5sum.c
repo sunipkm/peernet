@@ -194,14 +194,14 @@ uint8_t* peer_md5sum_md5String(char *input){
 	peer_md5sum_md5Update(&ctx, (uint8_t *)input, strlen(input));
 	peer_md5sum_md5Finalize(&ctx);
 
-	uint8_t *result = malloc(16);
+	uint8_t *result = (uint8_t *) malloc(16);
 	assert(result);
 	memcpy(result, ctx.digest, 16);
 	return result;
 }
 
 uint8_t* peer_md5sum_md5File(FILE *file){
-	char *input_buffer = malloc(1024);
+	char *input_buffer = (char *) malloc(1024);
 	size_t input_size = 0;
 
 	peer_md5sum_md5context_t ctx;
@@ -215,7 +215,7 @@ uint8_t* peer_md5sum_md5File(FILE *file){
 
 	free(input_buffer);
 
-	uint8_t *result = malloc(16);
+	uint8_t *result = (uint8_t *) malloc(16);
 	memcpy(result, ctx.digest, 16);
 	return result;
 }

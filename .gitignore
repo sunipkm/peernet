@@ -3,6 +3,7 @@
 save.xml
 # Object files
 *.o
+*.obj
 *.so
 *.ko
 *.pyc
@@ -19,6 +20,7 @@ save.xml
 *.so.*
 *.dylib
 *.lo
+*.pdb
 
 # Executables
 src/peer_selftest

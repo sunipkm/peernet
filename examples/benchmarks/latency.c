@@ -50,7 +50,8 @@ int main(int argc, char *argv[])
         const char *name = random_name();
         peer_t *peer = peer_new(name, NULL, "password", encryption);
         if (!peer)
-            printf("Peer error: %s\n", peer_strerror(peer_errno));
+            // printf("Peer error: %s\n", peer_strerror(peer_errno));
+            printf("Peer error: %s\n", "PEER_ERRNO DEPRECATED");
         else
             zhash_insert(peers, name, peer);
     }
