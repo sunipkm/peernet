@@ -5,6 +5,11 @@
 
 #include "peer_md5sum.h"
 
+#if defined(WIN32)
+#define strndup(a, b) strdup(a)
+#define strncasecmp _strnicmp
+#endif
+
 /*
  * Constants defined by the MD5 algorithm
  */
@@ -60,6 +65,7 @@ static uint8_t PADDING[] = {0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 /*
  * Initialize a context
  */
+PEER_PRIVATE
 void peer_md5sum_md5Init(peer_md5sum_md5context_t *ctx){
 	ctx->size = (uint64_t)0;
 
@@ -75,6 +81,7 @@ void peer_md5sum_md5Init(peer_md5sum_md5context_t *ctx){
  * If the input fills out a block of 512 bits, apply the algorithm (peer_md5sum_md5Step)
  * and save the result in the buffer. Also updates the overall size.
  */
+PEER_PRIVATE
 void peer_md5sum_md5Update(peer_md5sum_md5context_t *ctx, uint8_t *input_buffer, size_t input_len){
 	uint32_t input[16];
 	unsigned int offset = ctx->size % 64;
@@ -108,6 +115,7 @@ void peer_md5sum_md5Update(peer_md5sum_md5context_t *ctx, uint8_t *input_buffer,
  * Pad the current input to get to 448 bytes, append the size in bits to the very end,
  * and save the result of the final iteration into digest.
  */
+PEER_PRIVATE
 void peer_md5sum_md5Finalize(peer_md5sum_md5context_t *ctx){
 	uint32_t input[16];
 	unsigned int offset = ctx->size % 64;
@@ -142,6 +150,7 @@ void peer_md5sum_md5Finalize(peer_md5sum_md5context_t *ctx){
 /*
  * Step on 512 bits of input with the main MD5 algorithm.
  */
+PEER_PRIVATE
 void peer_md5sum_md5Step(uint32_t *buffer, uint32_t *input){
 	uint32_t AA = buffer[0];
 	uint32_t BB = buffer[1];
@@ -188,6 +197,7 @@ void peer_md5sum_md5Step(uint32_t *buffer, uint32_t *input){
 /*
  * Functions that will return a pointer to the hash of the provided input
  */
+PEER_PRIVATE
 uint8_t* peer_md5sum_md5String(char *input){
 	peer_md5sum_md5context_t ctx;
 	peer_md5sum_md5Init(&ctx);
@@ -200,6 +210,7 @@ uint8_t* peer_md5sum_md5String(char *input){
 	return result;
 }
 
+PEER_PRIVATE
 uint8_t* peer_md5sum_md5File(FILE *file){
 	char *input_buffer = (char *) malloc(1024);
 	size_t input_size = 0;

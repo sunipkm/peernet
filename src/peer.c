@@ -3440,6 +3440,7 @@ static void __peernet_on_evasive_demo(peer_t *self, const char *message_type, co
 
 void peer_test(bool verbose)
 {
+    int rc;
     peer_t *peer_a = peer_new("peer_a", NULL, "password", true);
     peer_t *peer_b = peer_new("peer_b", NULL, "password", true);
     peer_set_evasive_retry_count(peer_a, 2);
@@ -3450,10 +3451,9 @@ void peer_test(bool verbose)
         peer_set_verbose(peer_a);
         peer_set_verbose(peer_b);
     }
-    if (peer_on_connect(peer_a, peer_name(peer_b), &__peernet_on_connect_demo, NULL))
+    if ((rc = peer_on_connect(peer_a, peer_name(peer_b), &__peernet_on_connect_demo, NULL)))
     {
-        // printf("Error: %s (%d)\n", peer_strerror(peer_errno), peer_errno);
-        printf("Error: %s (%d)\n", "PEER_ERRNO DEPRECATED", 0);
+        printf("Error: %s (%d)\n", peer_strerror(rc), rc);
     }
     assert(!peer_on_disconnect(peer_b, peer_name(peer_a), &__peernet_on_exit_demo, NULL));
     assert(!peer_on_message(peer_a, peer_name(peer_b), "CHAT", &__peernet_on_message_demo, NULL));

@@ -24,6 +24,9 @@
 
 //  External dependencies
 #include <czmq.h>
+#ifdef WIN32
+#define ZYRE_BUILD_DRAFT_API 1
+#endif
 #include <zyre.h>
 
 //  PEER version macros for compile-time API detection
