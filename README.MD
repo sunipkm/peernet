@@ -9,6 +9,8 @@ unique names. This allows for message parsing based on which peer it came from,
 unlike Zyre which concerns more with UUIDs which are generated for peers randomly
 at start.
 
+A Python wrapper for PeerNet is also available [here](https://github.com/sunipkm/pypeernet).
+
 ## Ownership and License
 PeerNet is developed by Sunip K. Mukherjee. This project uses the MPL v2 license, see LICENSE.
 Contributions/ideas are welcome.
@@ -206,9 +208,9 @@ cd peernet
 git checkout v3.0.0
 build_win
 ``` 
-This will create the `Release` directory. The relevant files in this case are `libpeer.dll`, to be copied to `C:\libzmq\bin` and `libpeer.lib`, to be copied to `C:\libzmq\lib`.
-The header files (`peer.h`, `peer_library.h`, `peer_private.h`) should be copied from `peernet\include` directory to `C:\libzmq\include`. Additionally, the `chat` example (`peerchat.exe`)
-can be copied to the `C:\libzmq\bin` directory.
+This will create the `Release` directory. The relevant files in this case are `libpeer.dll` and `libpeer.lib`. These files are copied to `C:\libzmq\bin` and `C:\libzmq\lib`, respectively.
+The header files (`peer.h`, `peer_library.h`, `peer_private.h`) are copied from `peernet\include` directory to `C:\libzmq\include`. Additionally, the `chat` example (`peerchat.exe`)
+is copied to the `C:\libzmq\bin` directory.
 
 Finally, `C:\libzmq\bin` directory should be added to `PATH` for the dynamic libraries to be loaded automatically. At this point, start `peerchat.exe` in `C:\libzmq\lib` from file explorer to
 ensure there are no error messages related to missing DLLs. Run `peerchat.exe` in command line (which should be available anywhere if the directory is in path) to test.
