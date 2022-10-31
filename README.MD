@@ -58,6 +58,13 @@ The shared library (`.so` files in Linux and `.dylib` files in macOS) are stored
 Make sure the `lib` directory is exported to the `LD_LIBRARY_PATH` variable so that the shared library can be located by other binaries e.g. the
 `chat` example, or the [pyPeerNet](https://github.com/sunipkm/pypeernet) Python wrapper.
 
+## Installing on Windows
+It is recommended to use the installer associated with a release. The installer automatically adds the binaries to `PATH` for [pyPeerNet](https://github.com/sunipkm/pypeernet).
+
+Alternatively, obtain the binaries from the zip file included with the latest release and extract the contents. Add `\path\to\<x86|x64>\bin` to the `PATH` variable.
+Replace `<version>` with the current `PeerNet` version (e.g. `v3.0.0`), and choose the platform (`x86` or `x64`) accordingly for your system.
+This step is crucial for [pyPeerNet](https://github.com/sunipkm/pypeernet) to work on Windows.
+
 ## The 'Chat' example
 If built using the `cmake` build system, a `chat.exe` executable is generated in `examples/chat`. To run the program, open a terminal window in the `peernet` directory and run:
 ```
@@ -123,20 +130,16 @@ A peer can be stopped after getting out of the `while` loop by either calling `p
 
 All in all, with 36 lines of code, a terminal chat client is implemented.
 
-## Installing on Windows
-Extract the files from the included zip file, and note the location of the directory. Add `\path\to\peernet_<version>\<x86|x64>\bin` to the `PATH` variable.
-Replace `<version>` with the current `PeerNet` version (e.g. `v3.0.0`), and choose the platform (`x86` or `x64`) accordingly for your system.
-This step is crucial for [pyPeerNet](https://github.com/sunipkm/pypeernet) to work on Windows.
-
 ## Building on Windows
 Building `PeerNet` on Windows systems is not straight forward. Use of the attached binaries is suggested.
 
 To begin with, install Visual Studio Community Edition 2019 with CMake tools.
 After the tools are installed, navigate to the `Start Menu`, and find the `Visual Studio 2019` directory sub-menu. Under the sub-menu,
-select `<x64|x86> Native Tools Command Prompt` depending on your platform. This command prompt sets up the build environment with 
-`cmake`, `cl` (the Visual C++ compiler) etc. Check if you can access `git`, `cmake` and `cl` in this command line by typing in the 
-commands one by one. By default, the command line should open to `%USERPROFILE%\source\repos` directory. In case it does not,
-it is recommended that you use the following commands to create the aforementioned path and work there.
+select `<x64|x86> Native Tools Command Prompt` depending on your platform (use the cross-compile command tools as needed). 
+This command prompt sets up the build environment with  `cmake`, `cl` (the Visual C++ compiler) etc. Check if you can access 
+`git`, `cmake` and `cl` in this command line by typing in the commands one by one. By default, the command line should 
+open to `%USERPROFILE%\source\repos` directory. In case it does not, it is recommended that you use the following commands to 
+create the aforementioned path and work there.
 ```cmd
 cd %USERPROFILE%
 mkdir source
