@@ -119,22 +119,30 @@ All in all, with 36 lines of code, a terminal chat client is implemented.
 Building `PeerNet` on Windows systems is not straight forward. Use of the attached binaries is suggested.
 
 To begin with, install Visual Studio Community Edition 2019 with CMake tools.
-After the tools are installed, start Visual Studio. On the `New Project` window, simply continue without code. On the main editor window that
-should open next, navigate to `Tools` on the top menu bar, and select the `Developer Command Prompt` from the `Command Line` submenu. This
-command prompt sets up the build environment with `cmake`, `cl` (the Visual C++ compiler) etc. Check if you can access `git`, `cmake` and `cl`
-in this command line by typing in the commands one by one. By default, the command line opens to `%USERPROFILE%\source\repos` directory.
+After the tools are installed, navigate to the `Start Menu`, and find the `Visual Studio 2019` directory sub-menu. Under the sub-menu,
+select `<x64|x86> Native Tools Command Prompt` depending on your platform. This command prompt sets up the build environment with 
+`cmake`, `cl` (the Visual C++ compiler) etc. Check if you can access `git`, `cmake` and `cl` in this command line by typing in the 
+commands one by one. By default, the command line should open to `%USERPROFILE%\source\repos` directory. In case it does not,
+it is recommended that you use the following commands to create the aforementioned path and work there.
+```cmd
+cd %USERPROFILE%
+mkdir source
+cd source
+mkdir repos
+cd repos
+```
 Note: [Git for Windows](https://git-scm.org) may need to be installed separately prior
 to opening this command line.
 
 ### Building Libsodium
 Libsodium is the cryptographic backend that is required. In order to build it:
 ```cmd
-> git clone https://github.com/jedisct1/libsodium.git
-> cd libsodium
-> git checkout 1.0.18-RELEASE
-> cd builds\msvc\build
-> buildall.bat
-> cd ..\..\..\
+git clone https://github.com/jedisct1/libsodium.git
+cd libsodium
+git checkout 1.0.18-RELEASE
+cd builds\msvc\build
+buildall.bat
+cd ..\..\..\
 ```
 At this point, the command line should be in the `libsodium` directory. The library files can be found under `bin\<Win32|x64>\<Debug|Release>\<Platform Toolset>\<dynamic|ltcg|static>`.
 
@@ -142,22 +150,22 @@ Here, the `<Platform Toolset>` is the platform toolset you are using: `v100` for
 
 At this point, in comamnd line:
 ```cmd
-> start .
-> cd ..
+start .
+cd ..
 ```
 This will open a new `File Explorer` window in the `libsodium` directory, and the required build files for `libsodium` can be accessed. The command line is now in the root
 directory containing the `libsodium` directory.
 
 ### Building ZeroMQ
 ```cmd
-> git clone https://github.com/zeromq/libzmq.git
-> cd libzmq
-> git checkout v4.3.4
-> mkdir build
-> cd build
-> cmake .. -DBUILD_STATIC=OFF -DBUILD_SHARED=ON -DZMQ_BUILD_TESTS=ON -DWITH_LIBSODIUM=ON -DCMAKE_INCLUDE_PATH=..\libsodium\src\libsodium\include -DCMAKE_LIBRARY_PATH=..\libsodium\bin\<Win32|x64>\Release\<Platform Toolset>\dynamic -DCMAKE_INSTALL_PREFIX=C:\libzmq
-> cmake --build . --config Release --target install
-> cd ..\..\
+git clone https://github.com/zeromq/libzmq.git
+cd libzmq
+git checkout v4.3.4
+mkdir build
+cd build
+cmake .. -DBUILD_STATIC=OFF -DBUILD_SHARED=ON -DZMQ_BUILD_TESTS=ON -DWITH_LIBSODIUM=ON -DCMAKE_INCLUDE_PATH=..\libsodium\src\libsodium\include -DCMAKE_LIBRARY_PATH=..\libsodium\bin\<Win32|x64>\Release\<Platform Toolset>\dynamic -DCMAKE_INSTALL_PREFIX=C:\libzmq
+cmake --build . --config Release --target install
+cd ..\..\
 ```
 Insert the relevant platform (`Win32/x64`) and toolset (`v142` for `VS2019`) in the `cmake` command.
 
@@ -169,34 +177,34 @@ to a directory more suited for your needs. Once `zeromq` is installed, manually 
 
 ### Building CZMQ
 ```cmd
-> git clone https://github.com/zeromq/czmq.git
-> cd czmq
-> git checkout v4.2.1
-> mkdir build
-> cd build
-> cmake .. -DCZMQ_BUILD_SHARED=ON -DCZMQ_BUILD_STATIC=OFF -DCMAKE_PREFIX_PATH=C:\libzmq -DCMAKE_INSTALL_PREFIX=C:\libzmq
-> cmake --build . --config Release --target install
+git clone https://github.com/zeromq/czmq.git
+cd czmq
+git checkout v4.2.1
+mkdir build
+cd build
+cmake .. -DCZMQ_BUILD_SHARED=ON -DCZMQ_BUILD_STATIC=OFF -DCMAKE_PREFIX_PATH=C:\libzmq -DCMAKE_INSTALL_PREFIX=C:\libzmq
+cmake --build . --config Release --target install
 ```
 This will build and install `czmq` into `C:\libzmq`. Replace `C:\libzmq` with the path you used in the previous step.
 
 ### Building Zyre
 ```cmd
-> git clone https://github.com/zeromq/zyre.git
-> cd zyre
-> git checkout v2.0.1
-> mkdir build
-> cd build
-> cmake .. -DZYRE_BUILD_SHARED=ON -DZYRE_BUILD_STATIC=OFF -DCMAKE_PREFIX_PATH=C:\libzmq -DCMAKE_INSTALL_PREFIX=C:\libzmq -DENABLE-DRAFTS=YES 
-> cmake --build . --config Release --target install
+git clone https://github.com/zeromq/zyre.git
+cd zyre
+git checkout v2.0.1
+mkdir build
+cd build
+cmake .. -DZYRE_BUILD_SHARED=ON -DZYRE_BUILD_STATIC=OFF -DCMAKE_PREFIX_PATH=C:\libzmq -DCMAKE_INSTALL_PREFIX=C:\libzmq -DENABLE-DRAFTS=YES 
+cmake --build . --config Release --target install
 ```
 This will build and install `zyre` into `C:\libzmq`. Replace `C:\libzmq` with the path you used in the previous step.
 
 ### Building PeerNet
 ```cmd
-> git clone https://github.com/sunipkm/peernet
-> cd peernet
-> git checkout v3.0.0
-> build_win
+git clone https://github.com/sunipkm/peernet
+cd peernet
+git checkout v3.0.0
+build_win
 ``` 
 This will create the `Release` directory. The relevant files in this case are `libpeer.dll`, to be copied to `C:\libzmq\bin` and `libpeer.lib`, to be copied to `C:\libzmq\lib`.
 The header files (`peer.h`, `peer_library.h`, `peer_private.h`) should be copied from `peernet\include` directory to `C:\libzmq\include`. Additionally, the `chat` example (`peerchat.exe`)
