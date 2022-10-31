@@ -119,6 +119,7 @@ All in all, with 36 lines of code, a terminal chat client is implemented.
 
 ## Building on Windows
 Building `PeerNet` on Windows systems is not straight forward. Use of the attached binaries is suggested.
+Build may also require additional libraries that were present in the test build system through Anaconda Python.
 
 To begin with, install Visual Studio Community Edition 2019 with CMake tools.
 After the tools are installed, navigate to the `Start Menu`, and find the `Visual Studio 2019` directory sub-menu. Under the sub-menu,
