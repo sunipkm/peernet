@@ -19,14 +19,14 @@ This version of PeerNet uses mostly Zyre stable API, with the exception of the
 compatible with Zyre untill this method changes, at which point PeerNet will require
 an update.
 The exact versions PeerNet was tested against are listed:
-    - Zyre 2.0.1
-    - CZMQ 4.2.1
-    - ZeroMQ 4.3.4
-    - libSodium 1.0.18_1
+* Zyre 2.0.1 (`git checkout v2.0.1`)
+* CZMQ 4.2.1 (`git checkout v4.2.1`)
+* ZeroMQ 4.3.4 (`git checkout v4.3.4`)
+* libSodium 1.0.18_1 (`git checkout 1.0.18-RELEASE`)
 
 Additionally, PeerNet requires `cmake` or `autoconf`, `automake` and `libtool` for the build system to work. `pkg-config`, `pcre (libpcre3-dev)` are required for building, alongside Zyre and its pre-requisites.
 
-## Build Process
+## Build Process (POSIX)
 CMake is the preferred build tool, as it builds the `chat` example and documentations
 with ease. To build with CMake, within `peernet` directory, execute:
 
@@ -114,6 +114,96 @@ A peer can be stopped after getting out of the `while` loop by either calling `p
 ```
 
 All in all, with 36 lines of code, a terminal chat client is implemented.
+
+## Building on Windows
+Building `PeerNet` on Windows systems is not straight forward. Use of the attached binaries is suggested.
+
+To begin with, install Visual Studio Community Edition 2019 with CMake tools.
+After the tools are installed, start Visual Studio. On the `New Project` window, simply continue without code. On the main editor window that
+should open next, navigate to `Tools` on the top menu bar, and select the `Developer Command Prompt` from the `Command Line` submenu. This
+command prompt sets up the build environment with `cmake`, `cl` (the Visual C++ compiler) etc. Check if you can access `git`, `cmake` and `cl`
+in this command line by typing in the commands one by one. By default, the command line opens to `%USERPROFILE%\source\repos` directory.
+Note: [Git for Windows](https://git-scm.org) may need to be installed separately prior
+to opening this command line.
+
+### Building Libsodium
+Libsodium is the cryptographic backend that is required. In order to build it:
+```cmd
+> git clone https://github.com/jedisct1/libsodium.git
+> cd libsodium
+> git checkout 1.0.18-RELEASE
+> cd builds\msvc\build
+> buildall.bat
+> cd ..\..\..\
+```
+At this point, the command line should be in the `libsodium` directory. The library files can be found under `bin\<Win32|x64>\<Debug|Release>\<Platform Toolset>\<dynamic|ltcg|static>`.
+
+Here, the `<Platform Toolset>` is the platform toolset you are using: `v100` for `VS2010`, `v140` for `VS2015`, `v141` for `VS2017`, `v142` for `VS2019` etc.
+
+At this point, in comamnd line:
+```cmd
+> start .
+> cd ..
+```
+This will open a new `File Explorer` window in the `libsodium` directory, and the required build files for `libsodium` can be accessed. The command line is now in the root
+directory containing the `libsodium` directory.
+
+### Building ZeroMQ
+```cmd
+> git clone https://github.com/zeromq/libzmq.git
+> cd libzmq
+> git checkout v4.3.4
+> mkdir build
+> cd build
+> cmake .. -DBUILD_STATIC=OFF -DBUILD_SHARED=ON -DZMQ_BUILD_TESTS=ON -DWITH_LIBSODIUM=ON -DCMAKE_INCLUDE_PATH=..\libsodium\src\libsodium\include -DCMAKE_LIBRARY_PATH=..\libsodium\bin\<Win32|x64>\Release\<Platform Toolset>\dynamic -DCMAKE_INSTALL_PREFIX=C:\libzmq
+> cmake --build . --config Release --target install
+> cd ..\..\
+```
+Insert the relevant platform (`Win32/x64`) and toolset (`v142` for `VS2019`) in the `cmake` command.
+
+This will build ZeroMQ with `libsodium`, and install `libzmq` into `C:\libzmq`. You may need to run your shell with administrator privilege in order to write to the system disk, or change
+to a directory more suited for your needs. Once `zeromq` is installed, manually copy the `libsodium.dll` file from `libsodium\bin\<Win32|x64>\Release\<Platform Toolset>\dynamic` directory to
+`C:\libzmq\bin` directory, and the `libsodium.lib` file from the same directory to `C:\libzmq\lib`. Replace `C:\libzmq` with the `CMAKE_INSTALL_PREFIX` for `zeromq` if it is different.
+
+*Note: `zeromq` builds are toolset specific, and the compiled libraries and DLLs contain the toolset number and version info in the file name. Adequately edit the `zeromq*.lib` file name in `peernet\build_win.bat` file in case a different version and toolset is used. This behavior is not tested.*
+
+### Building CZMQ
+```cmd
+> git clone https://github.com/zeromq/czmq.git
+> cd czmq
+> git checkout v4.2.1
+> mkdir build
+> cd build
+> cmake .. -DCZMQ_BUILD_SHARED=ON -DCZMQ_BUILD_STATIC=OFF -DCMAKE_PREFIX_PATH=C:\libzmq -DCMAKE_INSTALL_PREFIX=C:\libzmq
+> cmake --build . --config Release --target install
+```
+This will build and install `czmq` into `C:\libzmq`. Replace `C:\libzmq` with the path you used in the previous step.
+
+### Building Zyre
+```cmd
+> git clone https://github.com/zeromq/zyre.git
+> cd zyre
+> git checkout v2.0.1
+> mkdir build
+> cd build
+> cmake .. -DZYRE_BUILD_SHARED=ON -DZYRE_BUILD_STATIC=OFF -DCMAKE_PREFIX_PATH=C:\libzmq -DCMAKE_INSTALL_PREFIX=C:\libzmq -DENABLE-DRAFTS=YES 
+> cmake --build . --config Release --target install
+```
+This will build and install `zyre` into `C:\libzmq`. Replace `C:\libzmq` with the path you used in the previous step.
+
+### Building PeerNet
+```cmd
+> git clone https://github.com/sunipkm/peernet
+> cd peernet
+> git checkout v3.0.0
+> build_win
+``` 
+This will create the `Release` directory. The relevant files in this case are `libpeer.dll`, to be copied to `C:\libzmq\bin` and `libpeer.lib`, to be copied to `C:\libzmq\lib`.
+The header files (`peer.h`, `peer_library.h`, `peer_private.h`) should be copied from `peernet\include` directory to `C:\libzmq\include`. Additionally, the `chat` example (`peerchat.exe`)
+can be copied to the `C:\libzmq\bin` directory.
+
+Finally, `C:\libzmq\bin` directory should be added to `PATH` for the dynamic libraries to be loaded automatically. At this point, start `peerchat.exe` in `C:\libzmq\lib` from file explorer to
+ensure there are no error messages related to missing DLLs. Run `peerchat.exe` in command line (which should be available anywhere if the directory is in path) to test.
 
 ## Possible Security Concern
 Compared to the first version of the API where any Zyre client could snoop at our secret group name and guessed

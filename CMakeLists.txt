@@ -158,8 +158,8 @@ ENDIF (zyre_FOUND)
 ########################################################################
 # version
 ########################################################################
-set(PEER_VERSION_MAJOR 2)
-set(PEER_VERSION_MINOR 2)
+set(PEER_VERSION_MAJOR 3)
+set(PEER_VERSION_MINOR 0)
 set(PEER_VERSION_PATCH 0)
 set(PEER_VERSION "${PEER_VERSION_MAJOR}.${PEER_VERSION_MINOR}.${PEER_VERSION_PATCH}")
 message(STATUS "Detected PEER Version - ${PEER_VERSION}")
@@ -237,7 +237,7 @@ if (PEER_BUILD_SHARED)
   set_target_properties (peer PROPERTIES
     PUBLIC_HEADER "${public_headers}"
     DEFINE_SYMBOL "PEER_EXPORTS"
-    SOVERSION "2"
+    SOVERSION "3"
     VERSION "${PEER_VERSION}"
     COMPILE_DEFINITIONS "DLL_EXPORT"
     OUTPUT_NAME "peer"
@@ -309,7 +309,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/src/CMakeLists-local.txt) # Optional project
 ########################################################################
 # pkgconfig
 ########################################################################
-set (VERSION "2.2.0")
+set (VERSION "3.0.0")
 set (prefix "${CMAKE_INSTALL_PREFIX}")
 set (exec_prefix "\${prefix}")
 set (libdir "\${prefix}/lib${LIB_SUFFIX}")

@@ -24,14 +24,11 @@
 
 //  External dependencies
 #include <czmq.h>
-#ifdef WIN32
-#define ZYRE_BUILD_DRAFT_API 1
-#endif
 #include <zyre.h>
 
 //  PEER version macros for compile-time API detection
-#define PEER_VERSION_MAJOR 2
-#define PEER_VERSION_MINOR 2
+#define PEER_VERSION_MAJOR 3
+#define PEER_VERSION_MINOR 0
 #define PEER_VERSION_PATCH 0
 
 #define PEER_MAKE_VERSION(major, minor, patch) \

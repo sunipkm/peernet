@@ -1,4 +1,5 @@
 # PeerNet Changelog
+9. [2022-10-31] (v3.0.0) C API update: peer_errno variable removed to ensure Windows compatibility. pypeernet updated to v2.0.
 8. [2022-09-24] (v.2.2.0) C API update: peer_stop function removed as it is unsafe. pypeernet is NOT affected.
 7. [2022-09-24] (v.2.1.4) Backend updates for (pypeernet)[https://github.com/sunipkm/pypeernet].
 6. [2022-09-23] (v.2.1.3) Peer collision detection was fixed after authentication update.

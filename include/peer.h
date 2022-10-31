@@ -57,7 +57,7 @@ typedef void (*peer_callback_t)(peer_t *_Nonnull self, const char *_Nonnull mess
  * @param group Name of group the peer belongs to. Set it to NULL to use the default "UNIVERSAL" group. Length has to be between 4 and 15 characters (inclusive).
  * @param password Plaintext password, only alphanumeric characters and '_' are allowed. Length has to be between 4 and 50 characters (inclusive). Password IS case sensitive.
  * @param encryption Enable/disable endpoint encryption.
- * @return peer_t * An instance of a peer on success, NULL on failure. peer_errno is set accordingly.
+ * @return peer_t * An instance of a peer on success, NULL on failure. errno is set accordingly. Use {@link peer_strerror}() to get the corresponding error string.
  */
 PEER_EXPORT peer_t *peer_new(const char *_Nonnull name, const char *_Nullable group, const char *_Nonnull password, bool encryption);
 
@@ -77,7 +77,7 @@ PEER_EXPORT void peer_destroy(peer_t **_Nonnull self_p);
  * @param message_type Message type string. Not case sensitive. Length has to be between 4 and 15 characters (inclusive), only alphanumeric characters and _ are allowed.
  * @param callback Pointer to the function of form {@link peer_callback_t}, can be NULL.
  * @param local_args Pointer to arguments to be sent to the callback function, can be NULL.
- * @return int 0 on success, -1 on error. peer_errno is set accordingly.
+ * @return int 0 on success, negative on error. Human readable error message can be retrieved by passing the return value to {@link peer_strerror}().
  */
 PEER_EXPORT int peer_on_message(peer_t *_Nonnull self, const char *_Nonnull peer, const char *_Nonnull message_type, peer_callback_t _Nullable callback, void *_Nullable local_args);
 
@@ -87,7 +87,7 @@ PEER_EXPORT int peer_on_message(peer_t *_Nonnull self, const char *_Nonnull peer
  * @param self Local instance of peer.
  * @param peer Name of the remote peer.
  * @param message_type Message type string.
- * @return int 0 on success, -1 on error. peer_error is set accordingly.
+ * @return int 0 on success, negative on error. Human readable error message can be retrieved by passing the return value to {@link peer_strerror}()..
  */
 PEER_EXPORT int peer_disable_on_message(peer_t *_Nonnull self, const char *_Nonnull peer, const char *_Nonnull message_type);
 
@@ -101,7 +101,7 @@ PEER_EXPORT int peer_disable_on_message(peer_t *_Nonnull self, const char *_Nonn
  * @param peer Name of the peer. Set to NULL for any peer.
  * @param callback Poiner to the function of the form {@link peer_callback_t}.
  * @param local_args Pointer to the arguments to be sent to the callback function.
- * @return int 0 on success, -1 on error. peer_error is set accordingly.
+ * @return int 0 on success, negative on error. Human readable error message can be retrieved by passing the return value to {@link peer_strerror}()..
  */
 PEER_EXPORT int peer_on_connect(peer_t *_Nonnull self, const char *_Nullable peer, peer_callback_t _Nullable callback, void *_Nullable local_args);
 
@@ -111,7 +111,7 @@ PEER_EXPORT int peer_on_connect(peer_t *_Nonnull self, const char *_Nullable pee
  *
  * @param self Local instance of peer.
  * @param peer Name of the peer, NULL for any peer.
- * @return int 0 on success, -1 on error. peer_error is set accordingly.
+ * @return int 0 on success, negative on error. Human readable error message can be retrieved by passing the return value to {@link peer_strerror}()..
  */
 PEER_EXPORT int peer_disable_on_connect(peer_t *_Nonnull self, const char *_Nullable peer);
 
@@ -126,7 +126,7 @@ PEER_EXPORT int peer_disable_on_connect(peer_t *_Nonnull self, const char *_Null
  * @param peer Name of the peer, or NULL for any peer.
  * @param callback Poiner to the function of the form {@link peer_callback_t}.
  * @param local_args Pointer to the arguments to be sent to the callback function.
- * @return int 0 on success, -1 on error. peer_error is set accordingly.
+ * @return int 0 on success, negative on error. Human readable error message can be retrieved by passing the return value to {@link peer_strerror}()..
  */
 PEER_EXPORT int peer_on_disconnect(peer_t *_Nonnull self, const char *_Nullable peer, peer_callback_t _Nullable callback, void *_Nullable local_args);
 
@@ -136,7 +136,7 @@ PEER_EXPORT int peer_on_disconnect(peer_t *_Nonnull self, const char *_Nullable 
  *
  * @param self Local instance of peer, or NULL for any peer.
  * @param peer Name of the remote peer, NULL for local peer.
- * @return int 0 on success, -1 on error. peer_error is set accordingly.
+ * @return int 0 on success, negative on error. Human readable error message can be retrieved by passing the return value to {@link peer_strerror}()..
  */
 PEER_EXPORT int peer_disable_on_disconnect(peer_t *_Nonnull self, const char *_Nullable peer);
 
@@ -150,7 +150,7 @@ PEER_EXPORT int peer_disable_on_disconnect(peer_t *_Nonnull self, const char *_N
  * @param peer Name of the remote peer.
  * @param callback Poiner to the function of the form {@link peer_callback_t}.
  * @param local_args Pointer to the arguments to be sent to the callback function.
- * @return int 0 on success, -1 on error. peer_error is set accordingly.
+ * @return int 0 on success, negative on error. Human readable error message can be retrieved by passing the return value to {@link peer_strerror}()..
  */
 PEER_EXPORT int peer_on_evasive(peer_t *_Nonnull self, const char *_Nonnull peer, peer_callback_t _Nullable callback, void *_Nullable local_args);
 
@@ -160,7 +160,7 @@ PEER_EXPORT int peer_on_evasive(peer_t *_Nonnull self, const char *_Nonnull peer
  *
  * @param self Local instance of peer.
  * @param peer Name of remote peer.
- * @return int 0 on success, -1 on error. peer_error is set accordingly.
+ * @return int 0 on success, negative on error. Human readable error message can be retrieved by passing the return value to {@link peer_strerror}()..
  */
 PEER_EXPORT int peer_disable_on_evasive(peer_t *_Nonnull self, const char *_Nonnull peer);
 
@@ -173,7 +173,7 @@ PEER_EXPORT int peer_disable_on_evasive(peer_t *_Nonnull self, const char *_Nonn
  * @param peer Name of the remote peer.
  * @param callback Poiner to the function of the form {@link peer_callback_t}.
  * @param local_args Pointer to the arguments to be sent to the callback function.
- * @return int 0 on success, -1 on error. peer_error is set accordingly.
+ * @return int 0 on success, negative on error. Human readable error message can be retrieved by passing the return value to {@link peer_strerror}()..
  */
 PEER_EXPORT int peer_on_silent(peer_t *_Nonnull self, const char *_Nonnull peer, peer_callback_t _Nullable callback, void *_Nullable local_args);
 
@@ -183,7 +183,7 @@ PEER_EXPORT int peer_on_silent(peer_t *_Nonnull self, const char *_Nonnull peer,
  *
  * @param self Local instance of peer.
  * @param peer Name of remote peer.
- * @return int 0 on success, -1 on error. peer_error is set accordingly.
+ * @return int 0 on success, negative on error. Human readable error message can be retrieved by passing the return value to {@link peer_strerror}()..
  */
 PEER_EXPORT int peer_disable_on_silent(peer_t *_Nonnull self, const char *_Nonnull peer);
 
