@@ -39,7 +39,8 @@ with ease. To build with CMake, within `peernet` directory, execute:
     $ sudo make install
 ```
 
-This will build the project and execute the self-test program.
+This will build the project and execute the self-test program. Specify `-DCMAKE_INSTALL_PREFIX=/path/to/install` to set a custom installation
+prefix path (hereafter referred to as prefix path). The default prefix path is `/usr/local`.
 
 Alternatively, in the `peernet` directory, execute:
 ```
@@ -51,6 +52,11 @@ Alternatively, in the `peernet` directory, execute:
 
 Check out `examples/chat/chat.c` to understand basic usage. The library is also extensively
 documented, and a doxygen documentation is generated using the `cmake` build system.
+
+The PeerNet install prefix path defaults to `/usr/local/` if using the `cmake` build system, or `--prefix` is not supplied in `./configure`.
+The shared library (`.so` files in Linux and `.dylib` files in macOS) are stored in the `lib` subdirectory under the prefix path.
+Make sure the `lib` directory is exported to the `LD_LIBRARY_PATH` variable so that the shared library can be located by other binaries e.g. the
+`chat` example, or the [pyPeerNet](https://github.com/sunipkm/pypeernet) Python wrapper.
 
 ## The 'Chat' example
 If built using the `cmake` build system, a `chat.exe` executable is generated in `examples/chat`. To run the program, open a terminal window in the `peernet` directory and run:
@@ -117,9 +123,13 @@ A peer can be stopped after getting out of the `while` loop by either calling `p
 
 All in all, with 36 lines of code, a terminal chat client is implemented.
 
+## Installing on Windows
+Extract the files from the included zip file, and note the location of the directory. Add `\path\to\peernet_<version>\<x86|x64>\bin` to the `PATH` variable.
+Replace `<version>` with the current `PeerNet` version (e.g. `v3.0.0`), and choose the platform (`x86` or `x64`) accordingly for your system.
+This step is crucial for [pyPeerNet](https://github.com/sunipkm/pypeernet) to work on Windows.
+
 ## Building on Windows
 Building `PeerNet` on Windows systems is not straight forward. Use of the attached binaries is suggested.
-Build may also require additional libraries that were present in the test build system through Anaconda Python.
 
 To begin with, install Visual Studio Community Edition 2019 with CMake tools.
 After the tools are installed, navigate to the `Start Menu`, and find the `Visual Studio 2019` directory sub-menu. Under the sub-menu,
