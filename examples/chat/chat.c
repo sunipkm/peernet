@@ -16,9 +16,10 @@
 static void message_received_cb(peer_t *self, const char *message_type, const char *remote_name, void *data_local, void *data_remote, size_t data_remote_len)
 {
     if (streq(message_type, CHAT_MESSAGE_TYPE))
-        printf("\n%s> %s\n\n", remote_name, (char *)data_remote);
+        printf("\n%s> %s\n\n%s> ", remote_name, (char *)data_remote, peer_name(self));
     else
-        printf("\n%s> Invalid message request %s", remote_name, message_type);
+        printf("\n%s> Invalid message request %s\n\n%s> ", remote_name, message_type, peer_name(self));
+    fflush(stdout);
 }
 
 void add_on_connect_cb(peer_t *self, const char *message_type, const char *remote_name, void *data_local, void *data_remote, size_t data_remote_len)
@@ -42,10 +43,14 @@ int main(int argc, char *argv[])
     while (!zsys_interrupted)
     {
         char message[1024];
+        printf("%s> ", peer_name(peer));
+        fflush(stdout);
         if (!fgets(message, 1024, stdin))
             break;
         message[strlen(message) - 1] = 0; // Drop the trailing linefeed
         assert(!peer_shouts(peer, CHAT_MESSAGE_TYPE, "%s", message));
+        printf("\n");
+        fflush(stdout);
     }
     peer_destroy(&peer);
     return 0;
